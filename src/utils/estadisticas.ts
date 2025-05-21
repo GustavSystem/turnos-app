@@ -27,13 +27,14 @@ interface CeldaData {
   color?: string;
 }
 
-const CELDAS_STORAGE_KEY = 'celdasTurnos';
+// Función para obtener la clave de almacenamiento específica por año
+const getCeldasStorageKey = (año: number) => `celdasTurnos_${año}`;
 
 export const calcularHorasPorMes = (mes: number, año: number, configuracionTurnos: any): number => {
   if (!configuracionTurnos) return 0;
   
   // Obtener las celdas con turnos asignados manualmente
-  const celdasGuardadas = localStorage.getItem(CELDAS_STORAGE_KEY);
+  const celdasGuardadas = localStorage.getItem(getCeldasStorageKey(año));
   const celdas: Record<string, CeldaData> = celdasGuardadas ? JSON.parse(celdasGuardadas) : {};
   
   // Nombres de los meses para construir las claves de las celdas

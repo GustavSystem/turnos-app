@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { getEstadisticas, guardarEstadisticas, calcularHorasPorMes } from '../utils/estadisticas';
-import { getConfiguracionTurnos, calcularTurnoParaFecha, ConfiguracionTurnos } from '../utils/turnosConfig';
+import React, { useState, useEffect, useMemo } from 'react';
+import { getEstadisticas, guardarEstadisticas, calcularHorasPorMes, Estadisticas } from '../utils/estadisticas';
+import { getConfiguracionTurnos, calcularTurnoParaFecha, ConfiguracionTurnos, Turno } from '../utils/turnosConfig';
+import { Festivo } from '../utils/festivos';
 
 // Importamos el tipo CeldaData y la clave de almacenamiento
 interface CeldaData {
@@ -10,11 +11,13 @@ interface CeldaData {
   color?: string;
 }
 
-const CELDAS_STORAGE_KEY = 'celdasTurnos';
+// Función para obtener la clave de almacenamiento específica por año
+const getCeldasStorageKey = (año: number) => `celdasTurnos_${año}`;
 
 interface Props {
   onClose: () => void;
   año: number;
+  activeFestivos: Festivo[];
 }
 
 interface TurnoCount {
@@ -23,20 +26,21 @@ interface TurnoCount {
   horas: number;
 }
 
-const EstadisticasTurnos: React.FC<Props> = ({ onClose, año }) => {
+const EstadisticasTurnos: React.FC<Props> = ({ onClose, año, activeFestivos }) => {
+  const meses = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
   const [estadisticas, setEstadisticas] = useState(getEstadisticas());
   const [configuracionTurnos, setConfiguracionTurnos] = useState<ConfiguracionTurnos | null>(getConfiguracionTurnos());
-  const [horasTotalesAnio, setHorasTotalesAnio] = useState(0);
-  const [turnosPorMes, setTurnosPorMes] = useState<Record<number, TurnoCount[]>>({});
-
-  useEffect(() => {
-    const config = getConfiguracionTurnos();
-    setConfiguracionTurnos(config);
-    
-    if (!config) return;
+  
+  // Memoize the statistics calculations
+  const { horasTotalesAnio, turnosPorMes, horasPorMes } = useMemo(() => {
+    if (!configuracionTurnos) return { horasTotalesAnio: 0, turnosPorMes: {}, horasPorMes: {} };
     
     // Obtener las celdas con turnos asignados manualmente
-    const celdasGuardadas = localStorage.getItem(CELDAS_STORAGE_KEY);
+    const celdasGuardadas = localStorage.getItem(getCeldasStorageKey(año));
     const celdas: Record<string, CeldaData> = celdasGuardadas ? JSON.parse(celdasGuardadas) : {};
     
     // Calcular horas y turnos por mes
@@ -57,23 +61,19 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año }) => {
         
         // Verificar si hay un turno asignado manualmente para esta fecha
         if (celdas[celdaId] && celdas[celdaId].contenido) {
-          // Usar el turno asignado manualmente
           turnoLetra = celdas[celdaId].contenido;
-          // Buscar las horas correspondientes a este turno
-          const turnoConfig = config.turnos.find(t => t.letra === turnoLetra);
+          const turnoConfig = configuracionTurnos.turnos.find(t => t.letra === turnoLetra);
           if (turnoConfig) {
             turnoHoras = turnoConfig.horas;
           }
         } else {
-          // Si no hay asignación manual, usar el cálculo automático
-          const turno = calcularTurnoParaFecha(fecha, config);
+          const turno = calcularTurnoParaFecha(fecha, configuracionTurnos);
           if (turno) {
             turnoLetra = turno.letra;
             turnoHoras = turno.horas;
           }
         }
         
-        // Si tenemos un turno (manual o automático), contabilizarlo
         if (turnoLetra) {
           if (!turnosCount[turnoLetra]) {
             turnosCount[turnoLetra] = {
@@ -92,13 +92,20 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año }) => {
       totalAnio += totalHorasMes;
     }
     
-    setHorasTotalesAnio(totalAnio);
-    setTurnosPorMes(nuevosTurnosPorMes);
+    return {
+      horasTotalesAnio: totalAnio,
+      turnosPorMes: nuevosTurnosPorMes,
+      horasPorMes: nuevasHorasPorMes
+    };
+  }, [año, configuracionTurnos, activeFestivos, meses]);
+
+  // Update estadisticas when horasPorMes changes
+  useEffect(() => {
     setEstadisticas(prev => ({
       ...prev,
-      horasPorMes: nuevasHorasPorMes
+      horasPorMes
     }));
-  }, [año]);
+  }, [horasPorMes]);
 
   const handleHorasRealesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value) || 0;
@@ -113,66 +120,62 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año }) => {
     onClose();
   };
 
-  const meses = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-  ];
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-[95%] max-w-6xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[95vh] flex flex-col overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b">
-          <h2 className="text-xl sm:text-2xl font-bold">Estadísticas de Turnos {año}</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Estadísticas de Turnos {año}</h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
+            className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+            aria-label="Cerrar"
           >
-            ✕
+            &times;
           </button>
         </div>
 
         <div className="overflow-y-auto p-4 flex-1">
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-blue-800 mb-2">Horas Totales del Año</h3>
-                <p className="text-2xl font-bold text-blue-600">{horasTotalesAnio} horas</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="bg-blue-50 p-3 rounded-lg shadow-sm text-center">
+                <h3 className="text-xs font-semibold text-blue-800 mb-1 uppercase">Horas Totales Año</h3>
+                <p className="text-xl font-bold text-blue-600">{horasTotalesAnio}h</p>
               </div>
-              <div className="bg-green-50 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-green-800 mb-2">Horas Reales Esperadas</h3>
+              <div className="bg-green-50 p-3 rounded-lg shadow-sm text-center">
+                <h3 className="text-xs font-semibold text-green-800 mb-1 uppercase">Horas Reales Esperadas</h3>
                 <input
                   type="number"
                   value={estadisticas.horasRealesEsperadas}
                   onChange={handleHorasRealesChange}
-                  className="w-full p-2 border rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full p-1 border border-gray-300 rounded text-center text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-700"
                 />
               </div>
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-purple-800 mb-2">Diferencia</h3>
-                <p className="text-2xl font-bold text-purple-600">
-                  {horasTotalesAnio - estadisticas.horasRealesEsperadas} horas
+              <div className="bg-purple-50 p-3 rounded-lg shadow-sm text-center">
+                <h3 className="text-xs font-semibold text-purple-800 mb-1 uppercase">Diferencia</h3>
+                <p className="text-xl font-bold text-purple-600">
+                  {horasTotalesAnio - estadisticas.horasRealesEsperadas}h
                 </p>
               </div>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-4">Horas por Mes</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <h3 className="text-lg font-semibold mb-4 text-gray-800">Horas por Mes</h3>
+              <div className="space-y-4">
                 {meses.map((mes, index) => (
-                  <div key={mes} className="border rounded-lg p-4">
-                    <h4 className="font-semibold mb-2">{mes}</h4>
-                    <p className="text-2xl font-bold text-blue-600 mb-2">
-                      {estadisticas.horasPorMes[index] || 0} horas
-                    </p>
-                    <div className="space-y-2">
-                      {turnosPorMes[index]?.map(turno => (
-                        <div key={turno.letra} className="flex justify-between items-center">
-                          <span className="font-medium">Turno {turno.letra}</span>
-                          <span className="text-gray-600">
-                            {turno.count} días ({turno.horas * turno.count}h)
-                          </span>
-                        </div>
-                      ))}
+                  <div key={mes} className="pb-4 border-b border-gray-200 last:border-b-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 overflow-x-auto pb-1">
+                      <h4 className="font-semibold text-blue-700 flex-shrink-0 text-base">{mes}: {horasPorMes[index] || 0}h</h4>
+                      <div className="flex gap-3 flex-grow items-center">
+                        <span className="font-medium text-sm text-gray-700 flex-shrink-0">Turnos:</span>
+                        {turnosPorMes[index]?.map(turno => (
+                          <div key={turno.letra} className="flex items-center flex-shrink-0 bg-gray-100 px-2 py-1 rounded">
+                            <span className="font-medium text-xs text-gray-700">{turno.letra}:</span>
+                            <span className="text-gray-600 text-xs ml-1 whitespace-nowrap">
+                              {turno.count} días ({turno.horas * turno.count}h)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -181,10 +184,10 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año }) => {
           </div>
         </div>
 
-        <div className="p-4 border-t flex justify-end">
+        <div className="p-4 border-t border-gray-200 flex justify-end">
           <button
             onClick={guardarEstadisticasHandler}
-            className="btn btn-primary"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 sm:py-1 sm:px-3 sm:text-sm"
           >
             Guardar
           </button>

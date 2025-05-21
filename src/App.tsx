@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { obtenerFestivos, Festivo, eliminarFestivoFijo, restaurarFestivoFijo } from './utils/festivos';
-import { agregarFestivo, eliminarFestivo, getFestivosPersonalizados, FestivoPersonalizado } from './utils/festivosPersonalizados'; // Import añadido y tipo FestivoPersonalizado
-import { getConfiguracionTurnos, calcularTurnoParaFecha, guardarConfiguracionTurnos, ConfiguracionTurnos } from './utils/turnosConfig';
-import ConfiguracionTurnos from './components/ConfiguracionTurnos';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { obtenerFestivos, Festivo, eliminarFestivoFijo, restaurarFestivoFijo, getFestivosEliminados } from './utils/festivos';
+import { agregarFestivo, eliminarFestivo, getFestivosPersonalizados, FestivoPersonalizado } from './utils/festivosPersonalizados';
+import { getConfiguracionTurnos, calcularTurnoParaFecha, guardarConfiguracionTurnos, ConfiguracionTurnos, Turno } from './utils/turnosConfig';
+import { default as ConfiguracionTurnosComponent } from './components/ConfiguracionTurnos';
 import EstadisticasTurnos from './components/EstadisticasTurnos';
 
 interface CeldaData {
@@ -10,6 +10,16 @@ interface CeldaData {
   esFestivo?: boolean;
   descripcionFestivo?: string;
   color?: string;
+}
+
+// Definir el tipo para el estado del menú contextual sin clientX/clientY
+interface MenuContextualState {
+  dia: number;
+  mes: number;
+  celdaId: string;
+  letra: string;
+  color: string;
+  horas: number;
 }
 
 function App() {
@@ -24,38 +34,21 @@ function App() {
   const [editandoCelda, setEditandoCelda] = useState<string | null>(null);
   // Estado unificado para el menú contextual
   const [mostrarConfiguracion, setMostrarConfiguracion] = useState(false);
-  const [configuracionTurnos, setConfiguracionTurnos] = useState<ReturnType<typeof getConfiguracionTurnos>>(null);
+  const [configuracionTurnos, setConfiguracionTurnos] = useState<ConfiguracionTurnos | null>(null);
   const [celdaEditandoManual, setCeldaEditandoManual] = useState<{id: string, letra: string, color: string} | null>(null);
-  const [menuContextual, setMenuContextual] = useState<{
-    dia: number,
-    mes: number,
-    celdaId: string,
-    letra: string,
-    color: string,
-    clientX: number,
-    clientY: number
-  } | null>(null);
+  // Usar el nuevo tipo para menuContextual
+  const [menuContextual, setMenuContextual] = useState<MenuContextualState | null>(null);
   const [mostrarEstadisticas, setMostrarEstadisticas] = useState(false);
   const [mostrarMenuAjustes, setMostrarMenuAjustes] = useState(false);
 
-  // Clave para almacenar las celdas en localStorage
-  const CELDAS_STORAGE_KEY = 'celdasTurnos';
-  
-  useEffect(() => {
-    const config = getConfiguracionTurnos();
-    setConfiguracionTurnos(config);
-    
-    // Cargar celdas guardadas
-    const celdasGuardadas = localStorage.getItem(CELDAS_STORAGE_KEY);
-    if (celdasGuardadas) {
-      try {
-        setCeldas(JSON.parse(celdasGuardadas));
-      } catch (error) {
-        console.error('Error al cargar celdas guardadas:', error);
-      }
-    }
-  }, []);
+  // Clave para almacenar las celdas en localStorage, ahora específica por año
+  const CELDAS_STORAGE_KEY = `celdasTurnos_${currentYear}`;
 
+  // Estado para almacenar los festivos del año actual después de calcularlos
+  // Combinaremos festivos fijos (no eliminados para este año) y personalizados (del año actual o sin año)
+  const [activeFestivos, setActiveFestivos] = useState<Festivo[]>([]);
+
+  // Mover las funciones de utilidad antes de su uso
   const getDiasEnMes = (mes: number, año: number) => {
     return new Date(año, mes + 1, 0).getDate();
   };
@@ -72,10 +65,117 @@ function App() {
     return dias[fecha.getDay()];
   };
 
-  const esFestivo = useCallback((mes: number, dia: number) => {
-    const festivos = obtenerFestivos(currentYear);
-    return festivos.find(f => f.mes === mes && f.dia === dia);
+  // Cargar datos iniciales y recalcular festivos activos al cambiar el año
+  useEffect(() => {
+    const config = getConfiguracionTurnos();
+    setConfiguracionTurnos(config);
+
+    // Cargar celdas guardadas específicas del año actual
+    const celdasGuardadas = localStorage.getItem(`celdasTurnos_${currentYear}`);
+    if (celdasGuardadas) {
+      try {
+        setCeldas(JSON.parse(celdasGuardadas));
+      } catch (error) {
+        console.error('Error al cargar celdas guardadas:', error);
+      }
+    } else {
+      // Si no hay celdas guardadas para este año, inicializar con un objeto vacío
+      setCeldas({});
+    }
+
+    // Recalcular y almacenar los festivos activos para el año actual
+    // obtenerFestivos ya combina festivos fijos (filtrando eliminados) y personalizados (filtrando por año)
+    setActiveFestivos(obtenerFestivos(currentYear));
+
   }, [currentYear]);
+
+  // Memoize the festivo check function
+  const esFestivo = useCallback((mes: number, dia: number): Festivo | undefined => {
+    return activeFestivos.find(f => f.mes === mes && f.dia === dia);
+  }, [activeFestivos]);
+
+  // Memoize turno calculations for each date
+  const turnosCache = useMemo(() => {
+    const cache: Record<string, { letra: string | null, color: string | null }> = {};
+    
+    for (let mes = 0; mes < 12; mes++) {
+      const diasEnMes = new Date(currentYear, mes + 1, 0).getDate();
+      for (let dia = 1; dia <= diasEnMes; dia++) {
+        const fecha = new Date(currentYear, mes, dia);
+        const celdaId = `${meses[mes]}-${dia}`;
+        
+        // Check if there's a manual assignment
+        if (celdas[celdaId]?.contenido) {
+          cache[celdaId] = {
+            letra: celdas[celdaId].contenido,
+            color: celdas[celdaId].color || null
+          };
+        } else if (configuracionTurnos) {
+          // Calculate automatic turn
+          const turno = calcularTurnoParaFecha(fecha, configuracionTurnos);
+          cache[celdaId] = {
+            letra: turno?.letra || null,
+            color: turno?.color || null
+          };
+        }
+      }
+    }
+    return cache;
+  }, [currentYear, celdas, configuracionTurnos]);
+
+  // Memoize cell colors
+  const coloresCache = useMemo(() => {
+    const cache: Record<string, string> = {};
+    
+    for (let mes = 0; mes < 12; mes++) {
+      const diasEnMes = new Date(currentYear, mes + 1, 0).getDate();
+      for (let dia = 1; dia <= diasEnMes; dia++) {
+        const celdaId = `${meses[mes]}-${dia}`;
+        
+        // If it's a holiday, always use red
+        if (esFestivo(mes, dia)) {
+          cache[celdaId] = '#fca5a5';
+          continue;
+        }
+        
+        // If there's a manual color, use it
+        if (celdas[celdaId]?.color) {
+          cache[celdaId] = celdas[celdaId].color;
+          continue;
+        }
+        
+        // If it's weekend, use gray
+        if (esFinDeSemana(mes, dia)) {
+          cache[celdaId] = '#e5e7eb';
+          continue;
+        }
+        
+        // If there's a turn color, use it
+        const turnoColor = turnosCache[celdaId]?.color;
+        if (turnoColor) {
+          cache[celdaId] = turnoColor;
+          continue;
+        }
+        
+        // Default to white
+        cache[celdaId] = 'white';
+      }
+    }
+    return cache;
+  }, [currentYear, celdas, esFestivo, turnosCache]);
+
+  // Update the obtenerColorCelda function to use the cache
+  const obtenerColorCelda = useCallback((mes: number, dia: number, celdaId: string): string => {
+    if (hoveredCell === celdaId) {
+      return '#f3f4f6';
+    }
+    return coloresCache[celdaId] || 'white';
+  }, [hoveredCell, coloresCache]);
+
+  // Update the obtenerContenidoCelda function to use the cache
+  const obtenerContenidoCelda = useCallback((mes: number, dia: number, celdaId: string): string => {
+    return turnosCache[celdaId]?.letra || '';
+  }, [turnosCache]);
 
   const handleCeldaClick = (event: React.MouseEvent, mes: string, dia: number, mesIndex: number) => {
     // Si estamos en modo edición, continuar con la edición
@@ -84,22 +184,29 @@ function App() {
       setEditandoCelda(celdaId);
       return;
     }
-    
+
     // Para cualquier otro caso, mostrar el menú contextual
     event.preventDefault();
     const celdaId = `${meses[mesIndex]}-${dia}`;
-    
-    // Calcular la posición óptima para el menú
-    const posicion = calcularPosicionMenu(event.clientX, event.clientY);
-    
+
+    // Buscar el turno actual para obtener las horas si existe
+    let horasTurno = 0;
+    const letraTurno = celdas[celdaId]?.contenido || obtenerTurnoParaFecha(mesIndex, dia) || '';
+
+    if (configuracionTurnos && letraTurno) {
+      const turnoConfig = configuracionTurnos.turnos.find(t => t.letra === letraTurno);
+      if (turnoConfig) {
+        horasTurno = turnoConfig.horas;
+      }
+    }
+
     setMenuContextual({
       dia,
       mes: mesIndex,
       celdaId,
-      letra: celdas[celdaId]?.contenido || obtenerTurnoParaFecha(mesIndex, dia) || '',
+      letra: letraTurno,
       color: celdas[celdaId]?.color || obtenerColorTurno(mesIndex, dia) || '#ffffff',
-      clientX: posicion.x,
-      clientY: posicion.y
+      horas: horasTurno,
     });
   };
 
@@ -109,10 +216,10 @@ function App() {
       const celdaId = `${mes}-${dia}`;
       const diaSemana = obtenerDiaSemana(mesIndex, dia);
       const festivo = esFestivo(mesIndex, dia);
-      
+
       // Si es un festivo, mantener el color rojo
       let colorTurno = festivo ? '#fca5a5' : undefined;
-      
+
       // Si no es festivo y el contenido es una letra de turno, aplicar su color
       if (!festivo && configuracionTurnos) {
         const turno = configuracionTurnos.turnos.find(t => t.letra === contenido);
@@ -124,7 +231,7 @@ function App() {
       setCeldas(prev => {
         const nuevasCeldas = {
           ...prev,
-          [celdaId]: { 
+          [celdaId]: {
             ...prev[celdaId],
             contenido,
             color: colorTurno,
@@ -132,151 +239,120 @@ function App() {
             descripcionFestivo: festivo?.descripcion
           }
         };
-        // Guardar en localStorage
-        localStorage.setItem(CELDAS_STORAGE_KEY, JSON.stringify(nuevasCeldas));
+        // Guardar en localStorage con clave específica para el año actual
+        localStorage.setItem(`celdasTurnos_${currentYear}`, JSON.stringify(nuevasCeldas));
         return nuevasCeldas;
       });
       setEditandoCelda(null);
     }
   };
 
-  // Función para calcular la posición óptima del menú contextual
-  const calcularPosicionMenu = (x: number, y: number) => {
-    // Valores más realistas basados en el contenido actual del menú
-    const menuAncho = 288; // w-72 (ancho del menú)
-    // Calculamos una altura estimada basada en el contenido
-    // Esto es una estimación, el tamaño real dependerá del contenido y estilos
-    const alturaEstimadaBase = 450; // Altura base estimada
-    const alturaAdicionalPorTurno = configuracionTurnos ? Math.min(configuracionTurnos.turnos.length * 15, 100) : 0;
-    const menuAlto = Math.min(alturaEstimadaBase + alturaAdicionalPorTurno, window.innerHeight * 0.8);
-    
-    const margen = 20; // Margen de seguridad
-    
-    // Obtener dimensiones de la ventana
-    const ventanaAncho = window.innerWidth;
-    const ventanaAlto = window.innerHeight;
-    
-    // Calcular posición inicial
-    let posX = x;
-    let posY = y;
-    
-    // Ajustar para dispositivos móviles
-    const esMobile = ventanaAncho < 768;
-    
-    if (esMobile) {
-      // En móviles, centrar horizontalmente y colocar en la parte superior con margen
-      posX = (ventanaAncho - menuAncho) / 2;
-      posY = margen * 2;
-      return { x: posX, y: posY };
-    }
-    
-    // Para pantallas normales, verificar los límites
-    
-    // Verificar si el menú se sale por la derecha
-    if (posX + menuAncho + margen > ventanaAncho) {
-      posX = ventanaAncho - menuAncho - margen;
-    }
-    
-    // Verificar si el menú se sale por abajo
-    if (posY + menuAlto + margen > ventanaAlto) {
-      // Intentar colocar el menú arriba del punto de clic
-      const posYArriba = y - menuAlto - margen;
-      
-      if (posYArriba >= margen) {
-        // Si hay espacio arriba, colocarlo allí
-        posY = posYArriba;
-      } else {
-        // Si no hay suficiente espacio arriba ni abajo, colocarlo donde haya más espacio
-        const espacioArriba = y;
-        const espacioAbajo = ventanaAlto - y;
-        
-        if (espacioArriba > espacioAbajo) {
-          // Más espacio arriba, colocarlo ahí con scroll
-          posY = margen;
-        } else {
-          // Más espacio abajo, colocarlo ahí con scroll
-          posY = ventanaAlto - menuAlto - margen;
-        }
-      }
-    }
-    
-    // Verificar si el menú se sale por la izquierda
-    if (posX < margen) {
-      posX = margen;
-    }
-    
-    // Verificar si el menú se sale por arriba
-    if (posY < margen) {
-      posY = margen;
-    }
-    
-    return { x: posX, y: posY };
-  };
-
-  // Función unificada para mostrar el menú contextual (implementada en handleCeldaClick)
-
   const [modalFestivo, setModalFestivo] = useState<{
     visible: boolean;
     tipo?: 'nacional' | 'autonomico' | 'local';
     descripcion: string;
     soloEsteAño: boolean;
-  }>({ visible: false, descripcion: '', soloEsteAño: false });
+    dia: number | undefined;
+    mes: number | undefined;
+    celdaId?: string;
+  }>({ visible: false, descripcion: '', soloEsteAño: false, dia: undefined, mes: undefined });
 
   const handleAgregarFestivo = (tipo: 'nacional' | 'autonomico' | 'local') => {
+    // Asegurarse de que el menú contextual está abierto
     if (!menuContextual) return;
-    
-    // Mostrar modal en lugar de prompt/confirm
+
+    // Guardar datos del menú contextual en el estado del modal antes de cerrarlo
+    const { dia, mes, celdaId } = menuContextual;
+
+    setMenuContextual(null); // Cerrar menú contextual
+
+    // Mostrar modal para agregar festivo, pasando los datos de la celda
     setModalFestivo({
       visible: true,
       tipo,
       descripcion: '',
-      soloEsteAño: false
+      soloEsteAño: false,
+      dia: dia,
+      mes: mes,
+      celdaId: celdaId,
     });
   };
-  
-  const confirmarAgregarFestivo = () => {
-    if (!menuContextual || !modalFestivo.tipo || !modalFestivo.descripcion) return;
-    
-    agregarFestivo({
-      dia: menuContextual.dia,
-      mes: menuContextual.mes,
-      descripcion: modalFestivo.descripcion,
-      tipo: modalFestivo.tipo,
-      año: modalFestivo.soloEsteAño ? currentYear : undefined
-    });
 
-    setMenuContextual(null);
-    setModalFestivo({ visible: false, descripcion: '', soloEsteAño: false });
+  const confirmarAgregarFestivo = () => {
+    // Asegurar que el modal está visible y tiene los datos necesarios (dia y mes definidos)
+    if (!modalFestivo.visible || !modalFestivo.tipo || !modalFestivo.descripcion || modalFestivo.dia === undefined || modalFestivo.mes === undefined) return;
+
+    // Obtener los datos del festivo desde el estado del modal
+    const { dia, mes, descripcion, tipo, soloEsteAño } = modalFestivo;
+
+    // Agregar festivo personalizado. Si soloEsteAño es true, se guarda con el año actual. Si no, sin año.
+    // La función agregarFestivo en festivosPersonalizados.ts requiere 'año: number'.
+    // Si soloEsteAño es false, la intención original de guardar sin año no encaja con la actual utilidad.
+    // Asumiendo que si no es soloEsteAño, se desea agregar un festivo personalizado para el año actual.
+     agregarFestivo({
+        dia: dia,
+        mes: mes,
+        descripcion: descripcion,
+        tipo: tipo,
+        año: soloEsteAño ? currentYear : currentYear // Siempre pasar un número para el año
+     } as FestivoPersonalizado);
+
+    // Recalcular festivos activos del año actual después de agregar
+    setActiveFestivos(obtenerFestivos(currentYear));
+
+    setModalFestivo({ visible: false, descripcion: '', soloEsteAño: false, dia: undefined, mes: undefined }); // Resetear dia y mes al cerrar
+    mostrarNotificacion('Festivo agregado correctamente', 'success');
   };
 
   const [modalEliminarFestivo, setModalEliminarFestivo] = useState<{
     visible: boolean;
     soloEsteAño: boolean;
-  }>({ visible: false, soloEsteAño: false });
+    dia: number | undefined;
+    mes: number | undefined;
+    celdaId?: string;
+  }>({ visible: false, soloEsteAño: false, dia: undefined, mes: undefined });
 
   const handleEliminarFestivo = () => {
+    // Asegurarse de que el menú contextual está abierto
     if (!menuContextual) return;
-    
-    // Mostrar modal en lugar de confirm
+
+     // Guardar datos del menú contextual en el estado del modal antes de cerrarlo
+    const { dia, mes, celdaId } = menuContextual;
+
+    setMenuContextual(null); // Cerrar menú contextual
+
+    // Mostrar modal para eliminar festivo, pasando los datos de la celda
     setModalEliminarFestivo({
       visible: true,
-      soloEsteAño: false
+      soloEsteAño: false,
+      dia: dia,
+      mes: mes,
+      celdaId: celdaId,
     });
   };
-  
+
   const confirmarEliminarFestivo = () => {
-    if (!menuContextual) return;
-    
-    const año = modalEliminarFestivo.soloEsteAño ? currentYear : undefined;
-    
-    // Intentar eliminar primero como festivo personalizado
-    eliminarFestivo(menuContextual.dia, menuContextual.mes, año);
-    
-    // Si es un festivo fijo, también lo eliminamos
-    eliminarFestivoFijo(menuContextual.dia, menuContextual.mes, año);
-    
-    setMenuContextual(null);
-    setModalEliminarFestivo({ visible: false, soloEsteAño: false });
+    // Asegurar que el modal está visible y tiene los datos necesarios (dia y mes definidos)
+    if (!modalEliminarFestivo.visible || modalEliminarFestivo.dia === undefined || modalEliminarFestivo.mes === undefined) return; // celdaId no es estrictamente necesario para eliminar festivo
+
+     // Obtener los datos del festivo desde el estado del modal
+    const { dia, mes, soloEsteAño } = modalEliminarFestivo;
+
+    // Intentar eliminar primero como festivo personalizado.
+    // eliminarFestivo requiere el año (number).
+    // Si soloEsteAño es true, eliminamos el personalizado del currentYear.
+    // Si soloEsteAño es false, y queremos eliminar un personalizado general, nuestra utilidad actual no lo soporta.
+    // Asumiendo que si soloEsteAño es false, la intención es eliminar el personalizado para el AÑO ACTUAL.
+    eliminarFestivo(dia, mes, currentYear); // Pasa currentYear (number)
+
+    // Si es un festivo fijo, también lo eliminamos (marcando como eliminado para el año actual o todos).
+     eliminarFestivoFijo(dia, mes, soloEsteAño ? currentYear : undefined);
+
+    // Recalcular festivos activos del año actual después de eliminar
+    setActiveFestivos(obtenerFestivos(currentYear));
+
+    setModalEliminarFestivo({ visible: false, soloEsteAño: false, dia: undefined, mes: undefined }); // Resetear dia y mes al cerrar
+    mostrarNotificacion('Festivo eliminado correctamente', 'success');
   };
 
 // Estado y funciones para EDITAR festivo
@@ -288,26 +364,33 @@ function App() {
     tipo: 'nacional' | 'autonomico' | 'local';
     soloEsteAño: boolean;
     añoOriginal?: number; // Para saber si el original era específico de un año
+    celdaId?: string; // Añadir celdaId al estado del modal de editar festivo si es necesario
   }>({ visible: false, dia: 0, mes: 0, descripcion: '', tipo: 'local', soloEsteAño: false });
 
   const handleEditarFestivo = () => {
+     // Asegurarse de que el menú contextual está abierto
     if (!menuContextual) return;
 
-    // Buscar el festivo existente (asumimos que está en personalizados, podría necesitar lógica adicional si también hay fijos editables)
-    const festivosPersonalizados = getFestivosPersonalizados();
-    const festivoExistente = festivosPersonalizados.find((f: FestivoPersonalizado) => // Tipo explícito añadido
-      f.dia === menuContextual.dia &&
-      f.mes === menuContextual.mes &&
-      (f.año === currentYear || !f.año) // Considerar festivos de este año o generales
+     // Guardar datos del menú contextual en el estado del modal (dia, mes, celdaId)
+    const { dia, mes, celdaId } = menuContextual;
+
+    setMenuContextual(null); // Cerrar menú contextual
+
+    // Buscar el festivo existente en la lista de festivos activos
+    const festivoExistente = activeFestivos.find((f: Festivo) => // Usar el tipo Festivo
+      f.dia === dia &&
+      f.mes === mes &&
+      (f.año === undefined || f.año === currentYear) // Considerar festivos sin año (fijos) o del año actual (personalizados)
     );
 
     if (!festivoExistente) {
-      console.warn("No se encontró festivo personalizado para editar en esta fecha.");
-      // Podríamos buscar en festivos fijos si fuera necesario
-      setMenuContextual(null); // Cerrar menú si no hay nada que editar
+      console.warn("No se encontró festivo para editar en esta fecha.");
+      setModalEditarFestivo({ visible: false, dia: 0, mes: 0, descripcion: '', tipo: 'local', soloEsteAño: false }); // Asegurarse de que el modal esté cerrado si no hay festivo
+      mostrarNotificacion('No hay festivo para editar en esta fecha', 'error');
       return;
     }
 
+    // Mostrar modal para editar festivo, precargando los datos del festivo existente y los datos de la celda
     setModalEditarFestivo({
       visible: true,
       dia: festivoExistente.dia,
@@ -315,29 +398,49 @@ function App() {
       descripcion: festivoExistente.descripcion,
       tipo: festivoExistente.tipo,
       soloEsteAño: festivoExistente.año === currentYear, // Marcar si era específico de este año
-      añoOriginal: festivoExistente.año // Guardar el año original por si acaso
+      añoOriginal: festivoExistente.año, // Guardar el año original por si acaso (undefined for fixed)
+      celdaId: celdaId, // Guardar el celdaId también
     });
-    setMenuContextual(null); // Cerrar menú contextual
+
+    // El menú contextual ya se cerró arriba
   };
 
   const confirmarEditarFestivo = () => {
-    if (!modalEditarFestivo.visible) return;
+    // Asegurar que el modal está visible y tiene los datos necesarios (dia, mes, descripcion, tipo definidos)
+    if (!modalEditarFestivo.visible || modalEditarFestivo.dia === undefined || modalEditarFestivo.mes === undefined || !modalEditarFestivo.descripcion || modalEditarFestivo.tipo === undefined) return;
 
     const { dia, mes, descripcion, tipo, soloEsteAño, añoOriginal } = modalEditarFestivo;
 
-    // 1. Eliminar el festivo original
-    // Necesitamos saber si el original aplicaba solo a un año para eliminarlo correctamente
-    eliminarFestivo(dia, mes, añoOriginal); 
-    // Si también pudiera ser un festivo fijo editable, habría que llamar a eliminarFestivoFijo aquí
+    // Lógica para eliminar el festivo original:
+    // eliminarFestivo en festivosPersonalizados.ts requiere un año number.
+    // Si el original tenía añoOriginal (era personalizado con año), lo eliminamos con ese año.
+    // Si añoOriginal es undefined (era fijo), no llamamos a eliminarFestivo.
+    if (añoOriginal !== undefined) { // Era personalizado con año
+        eliminarFestivo(dia, mes, añoOriginal);
+    } else { // Era fijo
+         // Si el original era fijo y ahora se edita para ser solo de este año, marcamos el fijo como eliminado para este año.
+         // Si se edita para ser fijo nuevamente (soloEsteAño false), nos aseguramos de que no esté marcado como eliminado para este año.
+         if (soloEsteAño) {
+             eliminarFestivoFijo(dia, mes, currentYear);
+         } else {
+             restaurarFestivoFijo(dia, mes, currentYear);
+         }
 
-    // 2. Agregar el festivo modificado
-    agregarFestivo({
-      dia,
-      mes,
-      descripcion,
-      tipo,
-      año: soloEsteAño ? currentYear : undefined
-    });
+    }
+
+    // Lógica para agregar el festivo modificado:
+    // agregarFestivo requiere un festivo de tipo FestivoPersonalizado, que tiene 'año: number'.
+    // Siempre debemos pasar un número para el año al llamar a agregarFestivo.
+     agregarFestivo({
+        dia: dia,
+        mes: mes,
+        descripcion: descripcion,
+        tipo: tipo,
+        año: soloEsteAño ? currentYear : currentYear // Siempre pasar un número para el año
+     } as FestivoPersonalizado); // Asegurar el tipo
+
+    // Recalcular festivos activos del año actual después de editar
+    setActiveFestivos(obtenerFestivos(currentYear));
 
     // 3. Cerrar modal
     setModalEditarFestivo({ visible: false, dia: 0, mes: 0, descripcion: '', tipo: 'local', soloEsteAño: false });
@@ -350,7 +453,7 @@ function App() {
 
   const obtenerTurnoParaFecha = (mes: number, dia: number): string | null => {
     if (!configuracionTurnos) return null;
-    
+
     const fecha = new Date(currentYear, mes, dia);
     const turno = calcularTurnoParaFecha(fecha, configuracionTurnos);
     return turno?.letra || null;
@@ -358,55 +461,10 @@ function App() {
 
   const obtenerColorTurno = (mes: number, dia: number): string | null => {
     if (!configuracionTurnos) return null;
-    
+
     const fecha = new Date(currentYear, mes, dia);
     const turno = calcularTurnoParaFecha(fecha, configuracionTurnos);
     return turno?.color || null;
-  };
-
-  const obtenerColorCelda = (mes: number, dia: number, celdaId: string): string => {
-    // Si es festivo, siempre prevalece el color del festivo
-    if (esFestivo(mes, dia)) {
-      return '#fca5a5';
-    }
-    const celda = celdas[celdaId];
-    // Si hay un color personalizado, usarlo
-    if (celda?.color) {
-      return celda.color;
-    }
-    // Si es fin de semana, prevalece sobre el turno
-    if (esFinDeSemana(mes, dia)) {
-      return '#e5e7eb';
-    }
-    // Si está en modo edición y tiene hover
-    if (hoveredCell === celdaId) {
-      return '#f3f4f6';
-    }
-    // Si hay un turno configurado, usar su color
-    const colorTurno = obtenerColorTurno(mes, dia);
-    if (colorTurno) {
-      return colorTurno;
-    }
-    return 'white';
-  };
-
-  const obtenerContenidoCelda = (mes: number, dia: number, celdaId: string): string => {
-    const celda = celdas[celdaId];
-    
-    // Si hay contenido editado manualmente, prevalece
-    if (celda?.contenido) {
-      return celda.contenido;
-    }
-
-    // Si es festivo, mostrar la letra del turno si existe
-    if (esFestivo(mes, dia)) {
-      const turno = obtenerTurnoParaFecha(mes, dia);
-      return turno || '';
-    }
-
-    // Si hay un turno configurado, mostrar su letra
-    const turno = obtenerTurnoParaFecha(mes, dia);
-    return turno || '';
   };
 
   // Encontrar el mes con más días para el encabezado
@@ -414,7 +472,7 @@ function App() {
 
   const handleEditarCelda = () => {
     if (!menuContextual) return;
-    
+
     const celdaId = menuContextual.celdaId;
     setEditandoCelda(celdaId);
     setMenuContextual(null);
@@ -431,13 +489,13 @@ function App() {
           color: menuContextual.color
         }
       };
-      // Guardar en localStorage
-      localStorage.setItem(CELDAS_STORAGE_KEY, JSON.stringify(nuevasCeldas));
+      // Guardar en localStorage con clave específica para el año actual
+      localStorage.setItem(`celdasTurnos_${currentYear}`, JSON.stringify(nuevasCeldas));
       return nuevasCeldas;
     });
     setMenuContextual(null);
   };
-  
+
   // Función para seleccionar un turno desde el menú contextual
   const seleccionarTurnoDesdeMenu = (letra: string, color: string) => {
     if (!menuContextual) return;
@@ -468,11 +526,26 @@ function App() {
   // Función para exportar todos los datos relevantes
   const handleExportarDatos = () => {
     try {
+      // Recopilar todas las celdas de todos los años
+      const todasLasCeldas: Record<string, Record<string, CeldaData>> = {};
+
+      // Buscar todas las claves en localStorage que empiecen con 'celdasTurnos_'
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('celdasTurnos_')) {
+          const año = key.split('_')[1];
+          const celdasAño = localStorage.getItem(key);
+          if (celdasAño) {
+            todasLasCeldas[año] = JSON.parse(celdasAño);
+          }
+        }
+      }
+
       const datos = {
         configuracionTurnos: localStorage.getItem('configuracionTurnos'),
         festivosPersonalizados: localStorage.getItem('festivosPersonalizados'),
         festivosEliminados: localStorage.getItem('festivosEliminados'),
-        celdas: JSON.stringify(celdas),
+        celdas: JSON.stringify(todasLasCeldas),
         fechaExportacion: new Date().toISOString()
       };
       const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
@@ -500,7 +573,7 @@ function App() {
   const handleImportarDatos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -516,13 +589,13 @@ function App() {
         mostrarNotificacion('Error al leer el archivo', 'error');
       }
     };
-    
+
     reader.onerror = () => {
       mostrarNotificacion('Error al leer el archivo', 'error');
     };
-    
+
     reader.readAsText(file);
-    
+
     // Limpiar el input para permitir cargar el mismo archivo nuevamente
     e.target.value = '';
   };
@@ -530,34 +603,61 @@ function App() {
   // Función para confirmar la importación de datos
   const confirmarImportacion = () => {
     if (!modalImportacion.datos) return;
-    
+
     try {
       const datos = modalImportacion.datos;
       let cambiosRealizados = false;
-      
+
       if (datos.configuracionTurnos) {
         localStorage.setItem('configuracionTurnos', datos.configuracionTurnos);
         cambiosRealizados = true;
       }
-      
+
       if (datos.festivosPersonalizados) {
         localStorage.setItem('festivosPersonalizados', datos.festivosPersonalizados);
         cambiosRealizados = true;
       }
-      
+
       if (datos.festivosEliminados) {
         localStorage.setItem('festivosEliminados', datos.festivosEliminados);
         cambiosRealizados = true;
       }
-      
+
       if (datos.celdas) {
-        setCeldas(JSON.parse(datos.celdas));
-        cambiosRealizados = true;
+        try {
+          const celdasData = JSON.parse(datos.celdas);
+
+          // Verificar si es el formato nuevo (separado por años) o el antiguo
+          if (typeof celdasData === 'object' && Object.keys(celdasData).some(key => /^\d{4}$/.test(key))) {
+            // Formato nuevo: guardar cada año en su propia clave
+            Object.entries(celdasData).forEach(([año, celdasAño]) => {
+              localStorage.setItem(`celdasTurnos_${año}`, JSON.stringify(celdasAño));
+            });
+
+            // Actualizar las celdas del año actual
+            if (celdasData[currentYear.toString()]) {
+              setCeldas(celdasData[currentYear.toString()]);
+            } else {
+              setCeldas({});
+            }
+          } else {
+            // Formato antiguo: guardar todas las celdas en el año actual
+            localStorage.setItem(`celdasTurnos_${currentYear}`, datos.celdas);
+            setCeldas(celdasData);
+          }
+
+          cambiosRealizados = true;
+        } catch (error) {
+          console.error('Error al procesar las celdas importadas:', error);
+          mostrarNotificacion('Error al procesar las celdas', 'error');
+        }
       }
-      
+
       if (cambiosRealizados) {
         // Refrescar configuración de turnos
         setConfiguracionTurnos(getConfiguracionTurnos());
+        // Recalcular festivos activos después de importar
+        setActiveFestivos(obtenerFestivos(currentYear));
         mostrarNotificacion('¡Datos importados correctamente!', 'success');
       } else {
         mostrarNotificacion('El archivo no contenía datos válidos', 'error');
@@ -566,107 +666,59 @@ function App() {
       console.error('Error al importar datos:', error);
       mostrarNotificacion('Error al importar el archivo', 'error');
     }
-    
+
     // Cerrar el modal
     setModalImportacion({ visible: false, datos: null, archivo: null });
   };
 
   return (
-    <div className="container">
+    <div className="">
       {/* Modal para agregar festivo */}
       {modalFestivo.visible && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">Agregar festivo</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Descripción:</label>
-              <input 
-                type="text" 
-                className="w-full border rounded p-2"
+          <div className="bg-white rounded-lg shadow-xl p-3 w-80 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-base font-semibold">Agregar festivo</h3>
+              <button 
+                className="text-gray-500 hover:text-gray-700" 
+                onClick={() => setModalFestivo({ visible: false, descripcion: '', soloEsteAño: false, dia: undefined, mes: undefined })}
+              >
+                &times;
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 mb-2">
+              {modalFestivo.dia} de {meses[modalFestivo.mes || 0]}
+            </p>
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1">Descripción:</label>
+              <input
+                type="text"
+                className="w-full border rounded p-1 text-sm"
                 value={modalFestivo.descripcion}
                 onChange={(e) => setModalFestivo(prev => ({ ...prev, descripcion: e.target.value }))}
                 autoFocus
               />
-{/* Modal para EDITAR festivo */}
-      {modalEditarFestivo.visible && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">Editar festivo</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Editando festivo para el {modalEditarFestivo.dia} de {meses[modalEditarFestivo.mes]}
-            </p>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Descripción:</label>
-              <input 
-                type="text" 
-                className="w-full border rounded p-2"
-                value={modalEditarFestivo.descripcion}
-                onChange={(e) => setModalEditarFestivo(prev => ({ ...prev, descripcion: e.target.value }))}
-                autoFocus
-              />
             </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Tipo:</label>
-              <select 
-                className="w-full border rounded p-2"
-                value={modalEditarFestivo.tipo}
-                onChange={(e) => setModalEditarFestivo(prev => ({ ...prev, tipo: e.target.value as 'nacional' | 'autonomico' | 'local' }))}
-              >
-                <option value="nacional">Nacional</option>
-                <option value="autonomico">Autonómico</option>
-                <option value="local">Local</option>
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  className="mr-2"
-                  checked={modalEditarFestivo.soloEsteAño}
-                  onChange={(e) => setModalEditarFestivo(prev => ({ ...prev, soloEsteAño: e.target.checked }))}
-                />
-                Aplicar solo para este año ({currentYear})
-              </label>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setModalEditarFestivo({ visible: false, dia: 0, mes: 0, descripcion: '', tipo: 'local', soloEsteAño: false })}
-              >
-                Cancelar
-              </button>
-              <button 
-                className="btn btn-primary"
-                onClick={confirmarEditarFestivo}
-                disabled={!modalEditarFestivo.descripcion}
-              >
-                Guardar Cambios
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-            </div>
-            <div className="mb-4">
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  className="mr-2"
+            <div className="mb-3">
+              <label className="flex items-center text-xs">
+                <input
+                  type="checkbox"
+                  className="mr-1"
                   checked={modalFestivo.soloEsteAño}
                   onChange={(e) => setModalFestivo(prev => ({ ...prev, soloEsteAño: e.target.checked }))}
                 />
-                Aplicar solo para este año ({currentYear})
+                Solo para {currentYear}
               </label>
             </div>
             <div className="flex justify-end gap-2">
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setModalFestivo({ visible: false, descripcion: '', soloEsteAño: false })}
+              <button
+                className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                onClick={() => setModalFestivo({ visible: false, descripcion: '', soloEsteAño: false, dia: undefined, mes: undefined })}
               >
                 Cancelar
               </button>
-              <button 
-                className="btn btn-primary"
+              <button
+                className="px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
                 onClick={confirmarAgregarFestivo}
                 disabled={!modalFestivo.descripcion}
               >
@@ -680,29 +732,40 @@ function App() {
       {/* Modal para eliminar festivo */}
       {modalEliminarFestivo.visible && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">Eliminar festivo</h3>
-            <p className="mb-4">¿Estás seguro de que deseas eliminar este festivo?</p>
-            <div className="mb-4">
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  className="mr-2"
+          <div className="bg-white rounded-lg shadow-xl p-3 w-80 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-base font-semibold">Eliminar festivo</h3>
+              <button 
+                className="text-gray-500 hover:text-gray-700" 
+                onClick={() => setModalEliminarFestivo({ visible: false, soloEsteAño: false, dia: undefined, mes: undefined })}
+              >
+                &times;
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 mb-2">
+              {modalEliminarFestivo.dia} de {meses[modalEliminarFestivo.mes || 0]}
+            </p>
+            <p className="mb-3 text-xs">¿Estás seguro de que deseas eliminar este festivo?</p>
+            <div className="mb-3">
+              <label className="flex items-center text-xs">
+                <input
+                  type="checkbox"
+                  className="mr-1"
                   checked={modalEliminarFestivo.soloEsteAño}
                   onChange={(e) => setModalEliminarFestivo(prev => ({ ...prev, soloEsteAño: e.target.checked }))}
                 />
-                Eliminar solo para este año ({currentYear})
+                Solo para {currentYear}
               </label>
             </div>
             <div className="flex justify-end gap-2">
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setModalEliminarFestivo({ visible: false, soloEsteAño: false })}
+              <button
+                className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                onClick={() => setModalEliminarFestivo({ visible: false, soloEsteAño: false, dia: undefined, mes: undefined })}
               >
                 Cancelar
               </button>
-              <button 
-                className="btn btn-danger"
+              <button
+                className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
                 onClick={confirmarEliminarFestivo}
               >
                 Eliminar
@@ -713,36 +776,104 @@ function App() {
       )}
 
       {/* El modal para eliminar festivos se ha unificado */}
-      
-      <header className="card mb-4 py-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-bold">Calendario de Turnos</h1>
-          
-          <div className="flex items-center gap-2 md:gap-4">
-            <button 
+      {/* Modal para EDITAR festivo */}
+      {modalEditarFestivo.visible && (
+        // Aumentar el z-index para asegurar que esté por encima de otros modales y elementos
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[300]">
+          <div className="bg-white rounded-lg shadow-xl p-3 w-80 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-base font-semibold">Editar festivo</h3>
+              <button 
+                className="text-gray-500 hover:text-gray-700" 
+                onClick={() => setModalEditarFestivo({ visible: false, dia: 0, mes: 0, descripcion: '', tipo: 'local', soloEsteAño: false })}
+              >
+                &times;
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 mb-2">
+              {modalEditarFestivo.dia} de {meses[modalEditarFestivo.mes]}
+            </p>
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1">Descripción:</label>
+              <input
+                type="text"
+                className="w-full border rounded p-1 text-sm"
+                value={modalEditarFestivo.descripcion}
+                onChange={(e) => setModalEditarFestivo(prev => ({ ...prev, descripcion: e.target.value }))}
+                autoFocus
+              />
+            </div>
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1">Tipo:</label>
+              <select
+                className="w-full border rounded p-1 text-sm"
+                value={modalEditarFestivo.tipo}
+                onChange={(e) => setModalEditarFestivo(prev => ({ ...prev, tipo: e.target.value as 'nacional' | 'autonomico' | 'local' }))}
+              >
+                <option value="nacional">Nacional</option>
+                <option value="autonomico">Autonómico</option>
+                <option value="local">Local</option>
+              </select>
+            </div>
+            <div className="mb-3">
+              <label className="flex items-center text-xs">
+                <input
+                  type="checkbox"
+                  className="mr-1"
+                  checked={modalEditarFestivo.soloEsteAño}
+                  onChange={(e) => setModalEditarFestivo(prev => ({ ...prev, soloEsteAño: e.target.checked }))}
+                />
+                Solo para {currentYear}
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded"
+                onClick={() => setModalEditarFestivo({ visible: false, dia: 0, mes: 0, descripcion: '', tipo: 'local', soloEsteAño: false })}
+              >
+                Cancelar
+              </button>
+              <button
+                className="px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
+                onClick={confirmarEditarFestivo}
+                disabled={!modalEditarFestivo.descripcion}
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <header className="mb-4 py-3 sm:mb-1 sm:py-1 bg-white rounded-t-lg shadow max-w-full md:max-w-4xl lg:max-w-6xl mx-auto">
+        <div className="flex items-center justify-between flex-wrap gap-2 sm:gap-0 px-4 sm:px-1">
+          <h1 className="text-2xl font-bold sm:text-base">Calendario de Turnos</h1>
+
+          <div className="flex items-center gap-2 md:gap-4 sm:gap-0">
+            <button
               className="btn btn-secondary btn-sm md:btn-md"
               onClick={() => cambiarAño(-1)}
             >
               &lt;
             </button>
-            <h2 className="text-lg font-semibold">{currentYear}</h2>
-            <button 
+            <h2 className="text-lg font-semibold sm:text-sm mx-1">{currentYear}</h2>
+            <button
               className="btn btn-secondary btn-sm md:btn-md"
               onClick={() => cambiarAño(1)}
             >
               &gt;
             </button>
-            
-            <button 
-              className="btn btn-secondary btn-sm md:btn-md ml-2"
+
+            <button
+              className="btn btn-secondary btn-sm md:btn-md ml-2 sm:ml-1 sm:btn-xs"
               onClick={() => setMostrarEstadisticas(!mostrarEstadisticas)}
             >
               Estadísticas
             </button>
-            
+
             <div className="relative">
-              <button 
-                className="btn btn-primary btn-sm md:btn-md"
+              <button
+                className="btn btn-primary btn-sm md:btn-md sm:btn-xs"
                 onClick={() => setMostrarMenuAjustes(!mostrarMenuAjustes)}
               >
                 Ajustes
@@ -750,7 +881,7 @@ function App() {
               {mostrarMenuAjustes && (
                 <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg overflow-hidden z-50">
                   <div className="py-1">
-                    <button 
+                    <button
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       onClick={() => {
                         setMostrarConfiguracion(!mostrarConfiguracion);
@@ -759,7 +890,7 @@ function App() {
                     >
                       Configuración
                     </button>
-                    <button 
+                    <button
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       onClick={() => {
                         handleExportarDatos();
@@ -770,14 +901,14 @@ function App() {
                     </button>
                     <label className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 block cursor-pointer">
                       Importar
-                      <input 
-                        type="file" 
-                        accept="application/json" 
-                        className="hidden" 
+                      <input
+                        type="file"
+                        accept="application/json"
+                        className="hidden"
                         onChange={(e) => {
                           handleImportarDatos(e);
                           setMostrarMenuAjustes(false);
-                        }} 
+                        }}
                       />
                     </label>
                   </div>
@@ -788,38 +919,62 @@ function App() {
         </div>
       </header>
 
+      {/* Componente de Configuración como Modal */}
       {mostrarConfiguracion && (
-        <div className="card mb-4">
-          <ConfiguracionTurnos 
-            onClose={() => setMostrarConfiguracion(false)}
-            onSave={() => {
-              setConfiguracionTurnos(getConfiguracionTurnos());
-              setMostrarConfiguracion(false);
-            }}
-          />
+        <div className="modal-overlay">
+          <div className="modal-content sm:p-3">
+             {/* Puedes añadir un modal-header si el componente ConfiguracionTurnosComponent no tiene uno interno */}
+             {/* <div className="modal-header"><h3>Configuración</h3><button className="modal-close" onClick={() => setMostrarConfiguracion(false)}>&times;</button></div> */}
+            <ConfiguracionTurnosComponent
+              onClose={() => setMostrarConfiguracion(false)}
+              onSave={() => {
+                setConfiguracionTurnos(getConfiguracionTurnos());
+                setMostrarConfiguracion(false);
+                 // Recalcular festivos activos si la configuración de turnos afecta festivos (aunque no parece ser el caso actual)
+                setActiveFestivos(obtenerFestivos(currentYear));
+              }}
+            />
+             {/* Puedes añadir un modal-footer si es necesario */}
+          </div>
         </div>
       )}
 
+      {/* Componente de Estadísticas como Modal */}
       {mostrarEstadisticas && (
-        <div className="card mb-4">
-          <EstadisticasTurnos 
-            año={currentYear}
-            onClose={() => setMostrarEstadisticas(false)}
-          />
+         <div className="modal-overlay">
+          <div className="modal-content sm:p-3">
+            {/* Puedes añadir un modal-header si el componente EstadisticasTurnos no tiene uno interno */}
+             {/* <div className="modal-header"><h3>Estadísticas</h3><button className="modal-close" onClick={() => setMostrarEstadisticas(false)}>&times;</button></div> */}
+            <EstadisticasTurnos
+              año={currentYear}
+              onClose={() => setMostrarEstadisticas(false)}
+              // Pasar los festivos activos para que EstadisticasTurnos no los recalcule si los necesita
+              activeFestivos={activeFestivos}
+            />
+             {/* Puedes añadir un modal-footer si es necesario */}
+          </div>
         </div>
       )}
 
-      <div className="card">
-        <div className="w-full">
+      <div className="card sm:px-1 sm:pb-1 sm:pt-1 max-w-full md:max-w-4xl lg:max-w-6xl mx-auto">
+        {/* Contenedor principal del calendario que permitirá scroll horizontal en móvil */}
+        <div className="w-full overflow-x-auto">
           <div className="w-full">
             {/* Encabezados de días */}
             <div className="flex w-full">
-              <div className="w-24 flex-shrink-0"></div>
-              <div className="flex flex-1">
+              {/* Columna de meses - mantener ancho fijo y sticky */}
+              <div className="w-24 flex-shrink-0 sticky left-0 bg-gray-50 z-10 border-r sm:w-12 text-xs sm:text-[10px]">
+                 {/* Espacio vacío para alinear con las filas de meses */}
+                 <div className="h-8 border-b"></div>
+              </div>
+              {/* Contenedor de días - permitir que crezca lo necesario y aplicar ancho mínimo a las celdas */}
+              <div className="flex flex-grow">
                 {Array.from({ length: maxDias }, (_, i) => i + 1).map((dia) => (
                   <div
                     key={dia}
-                    className={`flex-1 h-8 border flex items-center justify-center relative ${hoveredCell === `header-${dia}` ? 'ring-2 ring-blue-500' : ''} bg-gray-50 text-xs font-medium`}
+                    // Añadir min-w-0 para permitir que flex-1 funcione correctamente con overflow-x-auto
+                    // Añadir un ancho mínimo para las celdas de los días en pantallas pequeñas
+                    className={`flex-1 h-8 border flex items-center justify-center relative ${hoveredCell === `header-${dia}` ? 'ring-2 ring-blue-500' : ''} bg-gray-50 text-xs font-medium min-w-[35px] sm:text-[9px] sm:min-w-[28px]`}
                     onMouseEnter={() => setHoveredCell(`header-${dia}`)}
                     onMouseLeave={() => setHoveredCell(null)}
                   >
@@ -832,45 +987,49 @@ function App() {
             {/* Filas de meses */}
             {meses.map((mes, mesIndex) => {
               const diasEnEsteMes = getDiasEnMes(mesIndex, currentYear);
-              
+
               return (
                 <div key={mes} className="flex w-full">
-                  <div className="w-24 flex-shrink-0 flex items-center justify-center border bg-gray-50 font-medium text-sm">
+                  {/* Columna del nombre del mes - mantener ancho fijo y sticky */}
+                  <div className="w-24 flex-shrink-0 flex items-center justify-center border sticky left-0 bg-gray-50 font-medium text-sm z-10 border-r sm:w-12 text-xs sm:text-[10px]">
                     {mes}
                   </div>
-                  <div className="flex flex-1">
+                  {/* Contenedor de días del mes - permitir que crezca lo necesario y aplicar ancho mínimo a las celdas */}
+                  <div className="flex flex-grow">
                     {Array.from({ length: maxDias }, (_, i) => i + 1).map((dia) => {
                       const esDiaValido = dia <= diasEnEsteMes;
                       if (!esDiaValido) {
                         return (
                           <div
                             key={`${mes}-${dia}`}
-                            className="flex-1 h-12 bg-gray-50 border"
+                            // Añadir min-w-[35px] para las celdas vacías también
+                            className="flex-1 h-12 bg-gray-50 border min-w-[35px] sm:min-w-[28px]"
                           />
                         );
                       }
 
                       const celdaId = `${mes}-${dia}`;
                       const diaSemana = obtenerDiaSemana(mesIndex, dia);
-                      const esFestivoActual = esFestivo(mesIndex, dia);
+                      const festivoActual = esFestivo(mesIndex, dia); // Usar la función optimizada
                       const color = obtenerColorCelda(mesIndex, dia, celdaId);
                       const contenido = obtenerContenidoCelda(mesIndex, dia, celdaId);
-                      
+
                       return (
                         <div
                           key={`${mes}-${dia}`}
                           className={`
                             flex-1 h-12 border relative flex flex-col items-center justify-center
                             ${esFinDeSemana(mesIndex, dia) ? 'bg-gray-100' : ''}
-                            ${esFestivoActual ? 'bg-red-100' : ''}
+                            ${festivoActual ? 'bg-red-100' : ''}
                             ${hoveredCell === celdaId ? 'ring-2 ring-blue-500' : ''}
                             hover:bg-opacity-90 transition-colors duration-150
+                            min-w-[35px] sm:min-w-[28px] // Añadir ancho mínimo a las celdas de días con contenido
                           `}
                           style={{ backgroundColor: color }}
                           onClick={(e) => handleCeldaClick(e, mes, dia, mesIndex)}
                           onMouseEnter={() => setHoveredCell(celdaId)}
                           onMouseLeave={() => setHoveredCell(null)}
-                          title={esFestivoActual ? `Festivo: ${esFestivoActual.descripcion}` : ''}
+                          title={festivoActual ? `Festivo: ${festivoActual.descripcion}` : ''}
                         >
                           <span className="text-xs text-gray-500 absolute top-0.5 left-0.5">
                             {diaSemana}
@@ -887,7 +1046,7 @@ function App() {
                           ) : (
                             <span className="text-lg font-bold">{contenido}</span>
                           )}
-                          {esFestivoActual && (
+                          {festivoActual && (
                             <>
                               <div className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></div>
                               <div className="absolute bottom-0 right-0 w-0 h-0 border-4 border-transparent border-red-500 border-b-red-500 border-r-red-500"></div>
@@ -908,159 +1067,128 @@ function App() {
       {/* El panel de gestión de festivos se ha unificado con el menú contextual */}
 
       {menuContextual && (
-        <div 
-          className="fixed bg-white shadow-lg rounded-lg p-4 z-[100] w-[90vw] sm:w-72"
-          style={{ 
-            top: `${menuContextual.clientY}px`, 
-            left: `${menuContextual.clientX}px`,
-            maxHeight: '80vh',
-            overflowY: 'auto',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)',
-            position: 'fixed',
-            transform: 'translate(0, 0)', // Asegura que no haya transformaciones que afecten la posición
-            transition: 'none', // Evita transiciones que puedan afectar la visibilidad inicial
-            maxWidth: 'calc(100vw - 40px)' // Asegura que no se salga de la pantalla
-          }}
-        >
-          <div className="flex flex-col gap-4 max-h-[calc(80vh-2rem)] overflow-y-auto pr-1">
-            <div className="border-b pb-2 mb-2 sticky top-0 bg-white z-10">
-              <h3 className="text-lg font-semibold">Editar Celda</h3>
-              <p className="text-xs text-gray-500">Día {menuContextual.dia} de {meses[menuContextual.mes]}</p>
+        <div className="modal-overlay">
+          <div className="modal-content sm:p-3">
+            <div className="modal-header sm:py-2">
+              <h3 className="modal-title sm:text-base">Editar Celda</h3>
+              <button className="modal-close sm:text-lg" onClick={() => setMenuContextual(null)}>&times;</button>
             </div>
-            <div>
-              <h4 className="font-medium mb-2">Configurar Turno</h4>
-              <div className="flex flex-wrap gap-2 items-center mb-2">
-                <div className="flex items-center gap-1">
-                  <label className="text-sm whitespace-nowrap">Turno:</label>
-                  <input 
-                    type="text" 
-                    className="border p-1 w-20 rounded"
-                    value={menuContextual.letra}
-                    onChange={(e) => setMenuContextual(prev => prev ? {...prev, letra: e.target.value} : null)}
-                  />
+            <div className="modal-body flex flex-col gap-6 sm:gap-3">
+              <div>
+                <h4 className="font-medium mb-3 sm:text-sm sm:mb-1">Configurar Turno</h4>
+                <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start md:items-center mb-4 sm:gap-2 sm:mb-2">
+                  <div className="flex items-center gap-2 sm:gap-1">
+                    <label className="text-sm whitespace-nowrap sm:text-xs">Turno:</label>
+                    <input
+                      type="text"
+                      className="border p-2 w-20 rounded sm:p-1 sm:w-16 sm:text-sm"
+                      value={menuContextual.letra}
+                      onChange={(e) => setMenuContextual(prev => prev ? {...prev, letra: e.target.value} : null)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 sm:gap-1">
+                    <label className="text-sm mr-1 whitespace-nowrap sm:text-xs">Color:</label>
+                    <input
+                      type="color"
+                      className="p-1 h-9 w-9 rounded border-0 sm:h-7 sm:w-7"
+                      value={menuContextual.color}
+                      onChange={(e) => setMenuContextual(prev => prev ? {...prev, color: e.target.value} : null)}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center">
-                  <label className="text-sm mr-1 whitespace-nowrap">Color:</label>
-                  <input 
-                    type="color" 
-                    className="w-8 h-8 rounded cursor-pointer"
-                    value={menuContextual.color}
-                    onChange={(e) => setMenuContextual(prev => prev ? {...prev, color: e.target.value} : null)}
-                  />
-                </div>
+                {configuracionTurnos && configuracionTurnos.turnos.length > 0 && (
+                  <div className="mt-4 sm:mt-2">
+                    <h5 className="text-sm font-semibold mb-2 sm:text-xs sm:mb-1">Seleccionar turno predefinido:</h5>
+                    <div className="flex flex-wrap gap-2 sm:gap-1">
+                      {configuracionTurnos.turnos.map(turno => (
+                        <button
+                          key={turno.letra}
+                          className="btn btn-sm"
+                          style={{ backgroundColor: turno.color, color: 'white' }}
+                          onClick={() => seleccionarTurnoDesdeMenu(turno.letra, turno.color)}
+                        >
+                          {turno.letra} ({turno.horas}h)
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-            
-            {configuracionTurnos && configuracionTurnos.turnos.length > 0 && (
-              <div className="mb-2">
-                <h4 className="text-sm font-medium mb-2">Turnos disponibles:</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-[200px] overflow-y-auto p-1">
-                  {configuracionTurnos.turnos.map(turno => (
-                    <button
-                      key={turno.letra}
-                      className="p-2 rounded border hover:bg-gray-100 flex flex-col items-center"
-                      style={{ backgroundColor: turno.color + '40' }}
-                      onClick={() => seleccionarTurnoDesdeMenu(turno.letra, turno.color)}
-                    >
-                      <span className="font-bold">{turno.letra}</span>
-                      <span className="text-xs truncate w-full text-center">{turno.nombre}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Sección de gestión de festivos */}
-            {esFestivo(menuContextual.mes, menuContextual.dia) && (
-              <div className="mb-2">
-                <h4 className="text-sm font-medium mb-2">Gestión de festivo:</h4>
-                <div className="flex gap-2"> {/* Usar flex para poner botones lado a lado */}
-                  <button
-                    className="btn btn-secondary flex-1 text-xs py-1.5 px-3 rounded-md bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
-                    onClick={handleEditarFestivo} // Nueva función a crear
-                  >
-                    Editar festivo
-                  </button>
-                  <button
-                    className="btn btn-danger flex-1 text-xs py-1.5 px-3 rounded-md bg-red-100 text-red-700 hover:bg-red-200"
-                    onClick={handleEliminarFestivo}
-                  >
-                    Eliminar festivo
-                  </button>
-                </div>
-              </div>
-            )}
 
-            {!esFestivo(menuContextual.mes, menuContextual.dia) && (
-              <div className="mb-2">
-                <h4 className="text-sm font-medium mb-2">Añadir como festivo:</h4>
-                <div className="grid grid-cols-3 gap-1">
-                  <button
-                    className="btn btn-secondary text-xs py-1.5 px-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
-                    onClick={() => handleAgregarFestivo('nacional')}
-                  >
-                    Nacional
-                  </button>
-                  <button
-                    className="btn btn-secondary text-xs py-1.5 px-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
-                    onClick={() => handleAgregarFestivo('autonomico')}
-                  >
-                    Autonómico
-                  </button>
-                  <button
-                    className="btn btn-secondary text-xs py-1.5 px-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
-                    onClick={() => handleAgregarFestivo('local')}
-                  >
-                    Local
-                  </button>
+              {/* Sección de gestión de festivos (simplificada para usar modales dedicados) */}
+              {/* Los botones de festivos ahora abrirán los modales correspondientes */}
+              <div className="border-t pt-4 mt-4 sm:pt-2 sm:mt-2">
+                <h4 className="font-medium mb-2 sm:text-sm sm:mb-1">Añadir como festivo:</h4>
+                <div className="flex gap-2 flex-wrap sm:gap-1">
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleAgregarFestivo('nacional')}>NACIÓN</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleAgregarFestivo('autonomico')}>AUTONÓMICO</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleAgregarFestivo('local')}>LOCAL</button>
                 </div>
+                {/* Usar activeFestivos para verificar si hay un festivo existente en esta fecha */}
+                {activeFestivos.find(f => f.dia === menuContextual.dia && f.mes === menuContextual.mes && (f.año === undefined || f.año === currentYear)) && (
+                   <div className="mt-4 sm:mt-2">
+                    <h4 className="font-medium mb-2 sm:text-sm sm:mb-1">Gestión de festivo existente:</h4>
+                    <div className="flex gap-2 flex-wrap sm:gap-1">
+                       {/* Botón para editar festivo existente */}
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={handleEditarFestivo}
+                      >
+                        Editar Festivo
+                      </button>
+                      {/* Botón para eliminar festivo existente */}
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={handleEliminarFestivo}
+                      >
+                        Eliminar Festivo
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-            
-            <div className="flex justify-between mt-3 sticky bottom-0 bg-white pt-2 pb-1 z-10">
-              <button 
-                className="btn btn-secondary text-xs py-1.5 px-3 rounded-md"
+            </div>
+            <div className="modal-footer sm:py-2">
+              <button
+                className="btn btn-secondary sm:btn-sm"
                 onClick={() => setMenuContextual(null)}
               >
                 Cancelar
               </button>
-              <div className="flex gap-2">
-                <button 
-                  className="btn btn-primary text-xs py-1.5 px-3 rounded-md"
-                  onClick={handleGuardarEdicionCelda}
-                >
-                  Guardar
-                </button>
-              </div>
+              <button
+                className="btn btn-primary sm:btn-sm"
+                onClick={handleGuardarEdicionCelda}
+              >
+                Guardar
+              </button>
             </div>
-            
-            {/* Sección duplicada eliminada */}
           </div>
         </div>
       )}
+
       {/* Modal de confirmación de importación */}
       {modalImportacion.visible && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">Confirmar importación</h3>
-            <p className="mb-4">¿Estás seguro de que deseas importar los datos del archivo "{modalImportacion.archivo?.name}"?</p>
-            <p className="mb-4 text-sm text-red-600">Esta acción sobrescribirá tus datos actuales.</p>
-            
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto sm:w-11/12 sm:p-3">
+            <h3 className="text-lg font-semibold mb-4 sm:text-base sm:mb-2">Confirmar importación</h3>
+            <p className="mb-4 sm:mb-2 sm:text-sm">¿Estás seguro de que deseas importar los datos del archivo "{modalImportacion.archivo?.name}"?</p>
+            <p className="mb-4 text-sm text-red-600 sm:mb-2 sm:text-xs">Esta acción sobrescribirá tus datos actuales.</p>
+
             {modalImportacion.datos?.fechaExportacion && (
-              <p className="mb-4 text-sm">
+              <p className="mb-4 text-sm sm:mb-2 sm:text-xs">
                 Fecha de exportación: {new Date(modalImportacion.datos.fechaExportacion).toLocaleString()}
               </p>
             )}
-            
-            <div className="flex justify-end gap-2">
-              <button 
-                className="btn btn-secondary"
+
+            <div className="flex justify-end gap-2 sm:gap-1">
+              <button
+                className="btn btn-secondary sm:btn-sm"
                 onClick={() => setModalImportacion({ visible: false, datos: null, archivo: null })}
               >
                 Cancelar
               </button>
-              <button 
-                className="btn btn-primary"
+              <button
+                className="btn btn-primary sm:btn-sm"
                 onClick={confirmarImportacion}
               >
                 Importar
@@ -1069,10 +1197,10 @@ function App() {
           </div>
         </div>
       )}
-      
+
       {/* Notificación */}
       {notificacion && notificacion.visible && (
-        <div 
+        <div
           className={`fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-[150] ${notificacion.tipo === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`}
         >
           {notificacion.mensaje}
