@@ -116,10 +116,10 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año, activeFestivos }) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[95vh] flex flex-col overflow-hidden">
-        <div className="flex justify-between items-center p-4 border-b">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Estadísticas de Turnos {año}</h2>
+        <div className="flex justify-between items-center p-3 sm:p-4 border-b">
+          <h2 className="text-lg sm:text-2xl font-bold text-gray-800">Estadísticas de Turnos {año}</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
@@ -129,43 +129,43 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año, activeFestivos }) 
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto">
-          <div className="space-y-6">
+        <div className="p-3 sm:p-4 overflow-y-auto">
+          <div className="space-y-4 sm:space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-blue-50 p-3 rounded-lg shadow-sm text-center">
-                <h3 className="text-xs font-semibold text-blue-800 mb-1 uppercase">Horas Totales Año</h3>
-                <p className="text-xl font-bold text-blue-600">{horasTotalesAnio}h</p>
+              <div className="bg-blue-50 p-4 rounded-lg shadow-sm text-center">
+                <h3 className="text-sm sm:text-xs font-semibold text-blue-800 mb-2 uppercase">Horas Totales Año</h3>
+                <p className="text-2xl sm:text-xl font-bold text-blue-600">{horasTotalesAnio}h</p>
               </div>
-              <div className="bg-green-50 p-3 rounded-lg shadow-sm text-center">
-                <h3 className="text-xs font-semibold text-green-800 mb-1 uppercase">Horas Reales Esperadas</h3>
+              <div className="bg-green-50 p-4 rounded-lg shadow-sm text-center">
+                <h3 className="text-sm sm:text-xs font-semibold text-green-800 mb-2 uppercase">Horas Reales Esperadas</h3>
                 <input
                   type="number"
                   value={estadisticas.horasRealesEsperadas}
                   onChange={handleHorasRealesChange}
-                  className="w-full p-1 border border-gray-300 rounded text-center text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-700"
+                  className="w-full p-2 border border-gray-300 rounded text-center text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-700"
                 />
               </div>
-              <div className="bg-purple-50 p-3 rounded-lg shadow-sm text-center">
-                <h3 className="text-xs font-semibold text-purple-800 mb-1 uppercase">Diferencia</h3>
-                <p className="text-xl font-bold text-purple-600">
+              <div className="bg-purple-50 p-4 rounded-lg shadow-sm text-center">
+                <h3 className="text-sm sm:text-xs font-semibold text-purple-800 mb-2 uppercase">Diferencia</h3>
+                <p className="text-2xl sm:text-xl font-bold text-purple-600">
                   {horasTotalesAnio - estadisticas.horasRealesEsperadas}h
                 </p>
               </div>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">Horas por Mes</h3>
+              <h3 className="text-xl sm:text-lg font-semibold mb-4 text-gray-800">Horas por Mes</h3>
               <div className="space-y-4">
                 {meses.map((mes, index) => (
                   <div key={mes} className="pb-4 border-b border-gray-200 last:border-b-0">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 overflow-x-auto pb-1">
-                      <h4 className="font-semibold text-blue-700 flex-shrink-0 text-base">{mes}: {horasPorMes[index] || 0}h</h4>
-                      <div className="flex gap-3 flex-grow items-center">
-                        <span className="font-medium text-sm text-gray-700 flex-shrink-0">Turnos:</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 overflow-x-auto pb-1">
+                      <h4 className="font-semibold text-blue-700 flex-shrink-0 text-lg sm:text-base">{mes}: {horasPorMes[index] || 0}h</h4>
+                      <div className="flex flex-wrap gap-2 sm:gap-3 flex-grow items-center">
+                        <span className="font-medium text-base sm:text-sm text-gray-700 flex-shrink-0">Turnos:</span>
                         {turnosPorMes[index]?.map(turno => (
-                          <div key={turno.letra} className="flex items-center flex-shrink-0 bg-gray-100 px-2 py-1 rounded">
-                            <span className="font-medium text-xs text-gray-700">{turno.letra}:</span>
-                            <span className="text-gray-600 text-xs ml-1 whitespace-nowrap">
+                          <div key={turno.letra} className="flex items-center flex-shrink-0 bg-gray-100 px-3 py-2 rounded">
+                            <span className="font-medium text-sm text-gray-700">{turno.letra}:</span>
+                            <span className="text-gray-600 text-sm ml-1 whitespace-nowrap">
                               {turno.count} días ({turno.horas * turno.count}h)
                             </span>
                           </div>
@@ -179,10 +179,10 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año, activeFestivos }) 
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-200 flex justify-end">
+        <div className="p-3 sm:p-4 border-t border-gray-200 flex justify-end">
           <button
             onClick={guardarEstadisticasHandler}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 sm:py-1 sm:px-3 sm:text-sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-base sm:text-sm"
           >
             Guardar
           </button>
