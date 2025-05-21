@@ -1,21 +1,13 @@
 import React, { useState } from 'react';
 
-// Asumimos que tenemos tipos definidos para Festivo y Turno
-// import { Festivo } from '../types'; 
-// import { Turno } from '../types';
+// Importamos los tipos necesarios desde los archivos de utilidades
+import { Festivo, obtenerFestivos } from '../utils/festivos';
+import { Turno } from '../utils/turnosConfig';
 
-// Podríamos necesitar funciones de los utils
-import { agregarFestivo, eliminarFestivo, getFestivosPersonalizados } from '../utils/festivosPersonalizados';
-// import { obtenerFestivos } from '../utils/festivos';
+// Funciones de los utils e importación del tipo FestivoPersonalizado
+import { agregarFestivo, eliminarFestivo, getFestivosPersonalizados, FestivoPersonalizado } from '../utils/festivosPersonalizados';
 
-// Definir tipo FestivoPersonalizado si no está globalmente disponible
-interface FestivoPersonalizado {
-  dia: number;
-  mes: number;
-  descripcion: string;
-  tipo: 'nacional' | 'autonomico' | 'local';
-  año?: number;
-}
+// Ya no necesitamos definir FestivoPersonalizado aquí porque lo importamos
 
 interface CeldaSeleccionada {
   mes: string;
@@ -66,12 +58,16 @@ const Calendario: React.FC = () => {
         console.error("Mes inválido:", celda.mes);
         return;
       }
+      // Obtener el año actual
+      const añoActual = new Date().getFullYear();
+      
       // TODO: Obtener descripción y tipo de inputs cuando se añadan
       const nuevoFestivo: FestivoPersonalizado = {
         dia: celda.dia,
         mes: mesNum,
         descripcion: `Festivo ${celda.dia}/${mesNum}`, // Descripción de ejemplo
-        tipo: 'local' // Tipo de ejemplo
+        tipo: 'local', // Tipo de ejemplo
+        año: añoActual // Asignar el año actual como obligatorio
       };
       console.log(`Intentando añadir festivo:`, nuevoFestivo);
       agregarFestivo(nuevoFestivo);
@@ -85,17 +81,41 @@ const Calendario: React.FC = () => {
         console.error("Mes inválido:", celda.mes);
         return;
       }
+      // Obtener el año actual
+      const añoActual = new Date().getFullYear();
+      
       // TODO: Podríamos querer confirmar antes de eliminar
-      console.log(`Intentando eliminar festivo para ${celda.dia}/${mesNum}`);
-      eliminarFestivo(celda.dia, mesNum);
+      console.log(`Intentando eliminar festivo para ${celda.dia}/${mesNum} del año ${añoActual}`);
+      eliminarFestivo(celda.dia, mesNum, añoActual);
       // Podríamos añadir feedback al usuario aquí
       onClose(); // Cerrar modal después de la acción
     };
     
-    // Otros ajustes podrían ir aquí (ej. asignar turno)
+    // Asignar turno manualmente, guardando con la clave específica del año actual
     const handleAsignarTurno = (turno: string) => {
          console.log(`Asignar turno ${turno} a ${celda.dia} de ${celda.mes}`);
-         // Lógica para asignar turno
+         
+         // Obtener el año actual
+         const añoActual = new Date().getFullYear();
+         
+         // Construir la clave de almacenamiento específica para el año actual
+         const CELDAS_STORAGE_KEY = `celdasTurnos_${añoActual}`;
+         
+         // Obtener las celdas actuales
+         const celdasGuardadas = localStorage.getItem(CELDAS_STORAGE_KEY);
+         const celdas = celdasGuardadas ? JSON.parse(celdasGuardadas) : {};
+         
+         // Crear o actualizar la celda con el turno asignado
+         const celdaId = `${celda.mes}-${celda.dia}`;
+         celdas[celdaId] = {
+           ...celdas[celdaId],
+           contenido: turno,
+           // Aquí se podría añadir más información como el color según el turno
+         };
+         
+         // Guardar las celdas actualizadas
+         localStorage.setItem(CELDAS_STORAGE_KEY, JSON.stringify(celdas));
+         
          onClose();
     }
 
