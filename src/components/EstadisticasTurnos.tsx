@@ -127,8 +127,8 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año, activeFestivos }) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white flex flex-col w-full max-w-4xl h-full max-h-[95vh] rounded-lg shadow-xl">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white p-4 rounded-lg w-full max-w-2xl my-8 shadow-xl max-h-[95vh] overflow-y-auto flex flex-col">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b">
           <h2 className="text-xl md:text-2xl font-bold text-gray-800">Estadísticas de Turnos {año}</h2>
