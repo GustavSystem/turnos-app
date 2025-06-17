@@ -672,7 +672,7 @@ function App() {
   };
 
   return (
-    <div className="">
+    <div className="main-calendar-container w-full" style={{overflowX: 'hidden'}}>
       {/* Modal para agregar festivo */}
       {modalFestivo.visible && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
@@ -956,112 +956,97 @@ function App() {
         </div>
       )}
 
-      <div className="card sm:px-1 sm:pb-1 sm:pt-1 max-w-full md:max-w-4xl lg:max-w-6xl mx-auto">
-        {/* Contenedor principal del calendario que permitirá scroll horizontal en móvil */}
-        <div className="w-full overflow-x-auto">
-          <div className="w-full">
-            {/* Encabezados de días */}
-            <div className="flex w-full">
-              {/* Columna de meses - mantener ancho fijo y sticky */}
-              <div className="w-24 flex-shrink-0 sticky left-0 bg-gray-50 z-10 border-r sm:w-12 text-xs sm:text-[10px]">
-                 {/* Espacio vacío para alinear con las filas de meses */}
-                 <div className="h-8 border-b"></div>
+      <div className="w-full">
+        {/* Encabezados de días */}
+        <div className="flex w-full">
+          {/* Columna de meses - mantener ancho fijo y sticky */}
+          <div className="w-24 flex-shrink-0 sticky left-0 bg-gray-50 z-10 border-r sm:w-12 text-xs sm:text-[10px] calendario-celda-mes">
+             {/* Espacio vacío para alinear con las filas de meses */}
+             <div className="h-8 border-b"></div>
+          </div>
+          {/* Contenedor de días - permitir que crezca lo necesario y aplicar ancho mínimo a las celdas */}
+          <div className="flex flex-grow">
+            {Array.from({ length: maxDias }, (_, i) => i + 1).map((dia) => (
+              <div
+                key={dia}
+                className={`flex-1 h-8 border flex items-center justify-center relative bg-gray-50 text-xs font-medium min-w-[35px] sm:text-[9px] sm:min-w-[28px] calendario-celda-header`}
+                onMouseEnter={() => setHoveredCell(`header-${dia}`)}
+                onMouseLeave={() => setHoveredCell(null)}
+              >
+                {dia}
               </div>
-              {/* Contenedor de días - permitir que crezca lo necesario y aplicar ancho mínimo a las celdas */}
-              <div className="flex flex-grow">
-                {Array.from({ length: maxDias }, (_, i) => i + 1).map((dia) => (
-                  <div
-                    key={dia}
-                    // Añadir min-w-0 para permitir que flex-1 funcione correctamente con overflow-x-auto
-                    // Añadir un ancho mínimo para las celdas de los días en pantallas pequeñas
-                    className={`flex-1 h-8 border flex items-center justify-center relative ${hoveredCell === `header-${dia}` ? 'ring-2 ring-blue-500' : ''} bg-gray-50 text-xs font-medium min-w-[35px] sm:text-[9px] sm:min-w-[28px]`}
-                    onMouseEnter={() => setHoveredCell(`header-${dia}`)}
-                    onMouseLeave={() => setHoveredCell(null)}
-                  >
-                    {dia}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Filas de meses */}
-            {meses.map((mes, mesIndex) => {
-              const diasEnEsteMes = getDiasEnMes(mesIndex, currentYear);
-
-              return (
-                <div key={mes} className="flex w-full">
-                  {/* Columna del nombre del mes - mantener ancho fijo y sticky */}
-                  <div className="w-24 flex-shrink-0 flex items-center justify-center border sticky left-0 bg-gray-50 font-medium text-sm z-10 border-r sm:w-12 text-xs sm:text-[10px]">
-                    {mes}
-                  </div>
-                  {/* Contenedor de días del mes - permitir que crezca lo necesario y aplicar ancho mínimo a las celdas */}
-                  <div className="flex flex-grow">
-                    {Array.from({ length: maxDias }, (_, i) => i + 1).map((dia) => {
-                      const esDiaValido = dia <= diasEnEsteMes;
-                      if (!esDiaValido) {
-                        return (
-                          <div
-                            key={`${mes}-${dia}`}
-                            // Añadir min-w-[35px] para las celdas vacías también
-                            className="flex-1 h-12 bg-gray-50 border min-w-[35px] sm:min-w-[28px]"
-                          />
-                        );
-                      }
-
-                      const celdaId = `${mes}-${dia}`;
-                      const diaSemana = obtenerDiaSemana(mesIndex, dia);
-                      const festivoActual = esFestivo(mesIndex, dia); // Usar la función optimizada
-                      const color = obtenerColorCelda(mesIndex, dia, celdaId);
-                      const contenido = obtenerContenidoCelda(mesIndex, dia, celdaId);
-
-                      return (
-                        <div
-                          key={`${mes}-${dia}`}
-                          className={`
-                            flex-1 h-12 border relative flex flex-col items-center justify-center
-                            ${esFinDeSemana(mesIndex, dia) ? 'bg-gray-100' : ''}
-                            ${festivoActual ? 'bg-red-100' : ''}
-                            ${hoveredCell === celdaId ? 'ring-2 ring-blue-500' : ''}
-                            hover:bg-opacity-90 transition-colors duration-150
-                            min-w-[35px] sm:min-w-[28px] // Añadir ancho mínimo a las celdas de días con contenido
-                          `}
-                          style={{ backgroundColor: color }}
-                          onClick={(e) => handleCeldaClick(e, mes, dia, mesIndex)}
-                          onMouseEnter={() => setHoveredCell(celdaId)}
-                          onMouseLeave={() => setHoveredCell(null)}
-                          title={festivoActual ? `Festivo: ${festivoActual.descripcion}` : ''}
-                        >
-                          <span className="text-xs text-gray-500 absolute top-0.5 left-0.5">
-                            {diaSemana}
-                          </span>
-                          {editandoCelda === celdaId ? (
-                            <div
-                              contentEditable
-                              onKeyDown={(e) => handleCeldaKeyPress(e, mes, dia, mesIndex)}
-                              className="outline-none text-center w-full font-bold p-1 rounded hover:bg-white hover:bg-opacity-30"
-                              autoFocus
-                            >
-                              {contenido}
-                            </div>
-                          ) : (
-                            <span className="text-lg font-bold">{contenido}</span>
-                          )}
-                          {festivoActual && (
-                            <>
-                              <div className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></div>
-                              <div className="absolute bottom-0 right-0 w-0 h-0 border-4 border-transparent border-red-500 border-b-red-500 border-r-red-500"></div>
-                              <span className="text-[8px] text-red-700 absolute bottom-0.5 right-0.5 font-bold">F</span>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+            ))}
           </div>
         </div>
+
+        {/* Filas de meses */}
+        {meses.map((mes, mesIndex) => {
+          const diasEnEsteMes = getDiasEnMes(mesIndex, currentYear);
+
+          return (
+            <div key={mes} className="flex w-full calendario-fila-mes">
+              {/* Columna del nombre del mes - mantener ancho fijo y sticky */}
+              <div className="w-24 flex-shrink-0 flex items-center justify-center border sticky left-0 bg-gray-50 font-medium text-sm z-10 border-r sm:w-12 text-xs sm:text-[10px] calendario-celda-mes">
+                {mes}
+              </div>
+              {/* Contenedor de días del mes - permitir que crezca lo necesario y aplicar ancho mínimo a las celdas */}
+              <div className="flex flex-grow">
+                {Array.from({ length: maxDias }, (_, i) => i + 1).map((dia) => {
+                  const esDiaValido = dia <= diasEnEsteMes;
+                  if (!esDiaValido) {
+                    return (
+                      <div
+                        key={`${mes}-${dia}`}
+                        className="flex-1 h-12 bg-gray-50 border min-w-[35px] sm:min-w-[28px] calendario-celda-dia"
+                      />
+                    );
+                  }
+
+                  const celdaId = `${mes}-${dia}`;
+                  const diaSemana = obtenerDiaSemana(mesIndex, dia);
+                  const festivoActual = esFestivo(mesIndex, dia); // Usar la función optimizada
+                  const color = obtenerColorCelda(mesIndex, dia, celdaId);
+                  const contenido = obtenerContenidoCelda(mesIndex, dia, celdaId);
+
+                  return (
+                    <div
+                      key={`${mes}-${dia}`}
+                      className={`flex-1 h-12 border relative flex flex-col items-center justify-center min-w-[35px] sm:min-w-[28px] calendario-celda-dia`}
+                      style={{ backgroundColor: color }}
+                      onClick={(e) => handleCeldaClick(e, mes, dia, mesIndex)}
+                      onMouseEnter={() => setHoveredCell(celdaId)}
+                      onMouseLeave={() => setHoveredCell(null)}
+                      title={festivoActual ? `Festivo: ${festivoActual.descripcion}` : ''}
+                    >
+                      <span className="text-xs text-gray-500 absolute top-0.5 left-0.5">
+                        {diaSemana}
+                      </span>
+                      {editandoCelda === celdaId ? (
+                        <div
+                          contentEditable
+                          onKeyDown={(e) => handleCeldaKeyPress(e, mes, dia, mesIndex)}
+                          className="outline-none text-center w-full font-bold p-1 rounded hover:bg-white hover:bg-opacity-30"
+                          autoFocus
+                        >
+                          {contenido}
+                        </div>
+                      ) : (
+                        <span className="text-lg font-bold">{contenido}</span>
+                      )}
+                      {festivoActual && (
+                        <>
+                          <div className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></div>
+                          <div className="absolute bottom-0 right-0 w-0 h-0 border-4 border-transparent border-red-500 border-b-red-500 border-r-red-500"></div>
+                          <span className="text-[8px] text-red-700 absolute bottom-0.5 right-0.5 font-bold">F</span>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* El panel de gestión de festivos se ha unificado con el menú contextual */}

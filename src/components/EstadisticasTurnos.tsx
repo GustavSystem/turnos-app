@@ -127,88 +127,82 @@ const EstadisticasTurnos: React.FC<Props> = ({ onClose, año, activeFestivos }) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white p-4 rounded-lg w-full max-w-2xl my-8 shadow-xl max-h-[95vh] overflow-y-auto flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-1 overflow-y-auto">
+      <div className="bg-white p-1 rounded-lg w-full max-w-xl my-1 shadow-xl max-h-[98vh] overflow-y-auto flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b">
-          <h2 className="text-lg md:text-xl font-bold text-gray-800">Estadísticas de Turnos {año}</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl md:text-3xl leading-none p-2"
-            aria-label="Cerrar"
-          >
-            &times;
-          </button>
+        <div className="flex flex-col gap-1 border-b pb-1">
+          <div className="flex justify-between items-center">
+            <h2 className="text-base font-bold text-gray-800 m-0 p-0">Estadísticas {año}</h2>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 text-xl leading-none p-1"
+              aria-label="Cerrar"
+            >
+              &times;
+            </button>
+          </div>
+          {/* Stats Cards compactas y más estrechas */}
+          <div className="flex flex-row gap-1 mt-0 mb-0">
+            <div className="bg-blue-50 p-1 rounded shadow-sm text-center flex-1 min-w-[70px] max-w-[90px]">
+              <div className="text-[10px] font-semibold text-blue-800 uppercase">Totales</div>
+              <div className="text-sm font-bold text-blue-600">{horasTotalesAnio}h</div>
+            </div>
+            <div className="bg-green-50 p-1 rounded shadow-sm text-center flex-1 min-w-[70px] max-w-[90px]">
+              <div className="text-[10px] font-semibold text-green-800 uppercase">Reales</div>
+              <input
+                type="number"
+                value={estadisticas.horasRealesEsperadas}
+                onChange={handleHorasRealesChange}
+                className="w-full p-1 border border-gray-300 rounded text-center text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-700"
+                style={{minWidth: 0}}
+              />
+            </div>
+            <div className="bg-purple-50 p-1 rounded shadow-sm text-center flex-1 min-w-[70px] max-w-[90px]">
+              <div className="text-[10px] font-semibold text-purple-800 uppercase">Diferencia</div>
+              <div className="text-sm font-bold text-purple-600">
+                {horasTotalesAnio - estadisticas.horasRealesEsperadas}h
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-1">
           {error ? (
-            <div className="bg-red-50 p-4 rounded-lg text-red-700 text-center">
+            <div className="bg-red-50 p-2 rounded-lg text-red-700 text-center text-sm">
               {error}
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="bg-blue-50 p-1 rounded-lg shadow-sm text-center">
-                  <h3 className="text-xs md:text-xs font-semibold text-blue-800 uppercase">Horas Totales Año</h3>
-                  <p className="text-base md:text-lg font-bold text-blue-600">{horasTotalesAnio}h</p>
-                </div>
-                <div className="bg-green-50 p-1 rounded-lg shadow-sm text-center">
-                  <h3 className="text-xs md:text-xs font-semibold text-green-800 uppercase">Horas Reales Esperadas</h3>
-                  <input
-                    type="number"
-                    value={estadisticas.horasRealesEsperadas}
-                    onChange={handleHorasRealesChange}
-                    className="w-full p-1 md:p-2 border border-gray-300 rounded text-center text-lg md:text-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-700"
-                  />
-                </div>
-                <div className="bg-purple-50 p-1 rounded-lg shadow-sm text-center">
-                  <h3 className="text-xs md:text-xs font-semibold text-purple-800 uppercase">Diferencia</h3>
-                  <p className="text-base md:text-lg font-bold text-purple-600">
-                    {horasTotalesAnio - estadisticas.horasRealesEsperadas}h
-                  </p>
-                </div>
-              </div>
-
-              {/* Monthly Stats */}
+            <div className="space-y-1">
+              {/* Monthly Stats compacta */}
               <div>
-                <h3 className="text-sm md:text-base font-semibold mb-3 text-gray-800">Horas por Mes</h3>
-                <div className="space-y-3">
-                  {meses.map((mes, index) => (
-                    <div key={mes} className="pb-3 border-b border-gray-200 last:border-b-0">
-                      <div className="flex flex-col gap-2">
-                        <h4 className="font-semibold text-blue-700 text-sm md:text-base">{mes}: {horasPorMes[index] || 0}h</h4>
-                        <div className="flex flex-wrap gap-1 items-start">
-                          <span className="font-medium text-xs md:text-sm text-gray-700">Turnos:</span>
-                          {turnosPorMes[index]?.map(turno => (
-                            <div key={turno.letra} className="flex items-center bg-gray-100 px-1 py-0 md:px-1.5 md:py-0.5 rounded text-xs md:text-sm">
-                              <span className="font-medium text-gray-700">{turno.letra}:</span>
-                              <span className="text-gray-600 ml-1">
-                                {turno.count} días ({turno.horas * turno.count}h)
-                              </span>
+                <div className="text-xs font-semibold mb-0.5 text-gray-800">Horas por Mes</div>
+                <div className="calendario-scroll">
+                  <table className="tabla-calendario w-full text-xs">
+                    <tbody>
+                      {meses.map((mes, index) => (
+                        <tr key={mes} className="border-b last:border-b-0">
+                          <td className="py-0.5 pr-1 font-semibold text-blue-700 whitespace-nowrap min-w-[60px] align-middle">{mes}</td>
+                          <td className="py-0.5 pr-1 text-right text-gray-700 whitespace-nowrap min-w-[28px] align-middle">{horasPorMes[index] || 0}h</td>
+                          <td className="py-0.5 align-middle">
+                            <div className="flex flex-row flex-wrap gap-x-1 gap-y-0 items-center whitespace-nowrap">
+                              {turnosPorMes[index]?.map(turno => (
+                                <span key={turno.letra} className="inline-flex items-center bg-gray-100 px-1 rounded text-[10px] mr-0.5">
+                                  <span className="font-medium text-gray-700">{turno.letra}:</span>
+                                  <span className="text-gray-600 ml-0.5">{turno.count}d({turno.horas * turno.count}h)</span>
+                                </span>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        {/* <div className="p-4 border-t border-gray-200">
-          <button
-            onClick={guardarEstadisticasHandler}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 md:py-4 px-6 md:px-8 rounded-lg transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-lg md:text-xl"
-          >
-            Guardar
-          </button>
-        </div> */}
       </div>
     </div>
   );
