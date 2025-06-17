@@ -956,7 +956,7 @@ function App() {
         </div>
       )}
 
-      <div className="w-full">
+      <div className="w-full calendario-grid-interna">
         {/* Encabezados de días */}
         <div className="flex w-full">
           {/* Columna de meses - mantener ancho fijo y sticky */}
