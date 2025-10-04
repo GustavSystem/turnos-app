@@ -805,26 +805,7 @@ function App() {
         </div>
       </header>
 
-      {mostrarConfiguracion && (
-        <div className="card mb-4">
-          <ConfiguracionTurnosComponent 
-            onClose={() => setMostrarConfiguracion(false)}
-            onSave={() => {
-              setConfiguracionTurnos(getConfiguracionTurnos());
-              setMostrarConfiguracion(false);
-            }}
-          />
-        </div>
-      )}
 
-      {mostrarEstadisticas && (
-        <div className="card mb-4">
-          <EstadisticasTurnos 
-            año={currentYear}
-            onClose={() => setMostrarEstadisticas(false)}
-          />
-        </div>
-      )}
 
       <main className="card p-0 sm:p-2 md:p-4 overflow-x-auto">
         <div className="w-full min-w-[800px]">
@@ -1089,6 +1070,23 @@ function App() {
         >
           {notificacion.mensaje}
         </div>
+      )}
+
+      {mostrarConfiguracion && (
+        <ConfiguracionTurnosComponent 
+          onClose={() => setMostrarConfiguracion(false)}
+          onSave={() => {
+            setConfiguracionTurnos(getConfiguracionTurnos());
+            setMostrarConfiguracion(false);
+          }}
+        />
+      )}
+
+      {mostrarEstadisticas && (
+        <EstadisticasTurnos 
+          año={currentYear}
+          onClose={() => setMostrarEstadisticas(false)}
+        />
       )}
     </div>
   );
