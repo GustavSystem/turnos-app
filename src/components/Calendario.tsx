@@ -14,7 +14,11 @@ interface CeldaSeleccionada {
   dia: number;
 }
 
-const Calendario: React.FC = () => {
+interface CalendarioProps {
+  onActualizarCeldas: () => void;
+}
+
+const Calendario: React.FC<CalendarioProps> = ({ onActualizarCeldas }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [celdaSeleccionada, setCeldaSeleccionada] = useState<CeldaSeleccionada | null>(null);
 
@@ -94,17 +98,13 @@ const Calendario: React.FC = () => {
     // Asignar turno manualmente, guardando con la clave específica del año actual
     const handleAsignarTurno = (turno: string) => {
          console.log(`Asignar turno ${turno} a ${celda.dia} de ${celda.mes}`);
-         
          // Obtener el año actual
          const añoActual = new Date().getFullYear();
-         
          // Construir la clave de almacenamiento específica para el año actual
          const CELDAS_STORAGE_KEY = `celdasTurnos_${añoActual}`;
-         
          // Obtener las celdas actuales
          const celdasGuardadas = localStorage.getItem(CELDAS_STORAGE_KEY);
          const celdas = celdasGuardadas ? JSON.parse(celdasGuardadas) : {};
-         
          // Crear o actualizar la celda con el turno asignado
          const celdaId = `${celda.mes}-${celda.dia}`;
          celdas[celdaId] = {
@@ -112,16 +112,16 @@ const Calendario: React.FC = () => {
            contenido: turno,
            // Aquí se podría añadir más información como el color según el turno
          };
-         
          // Guardar las celdas actualizadas
          localStorage.setItem(CELDAS_STORAGE_KEY, JSON.stringify(celdas));
-         
+         // Llamar a la función para actualizar el estado en App
+         onActualizarCeldas();
          onClose();
     }
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white p-6 rounded shadow-lg w-96">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
           <h2 className="text-xl font-semibold mb-4">Editar Celda: {celda.dia} de {celda.mes}</h2>
           
           {/* Ajustes Visibles */}

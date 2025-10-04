@@ -54,10 +54,10 @@ const ConfiguracionTurnos: React.FC<Props> = ({ onClose, onSave }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white p-4 rounded-lg w-full max-w-2xl my-8 shadow-xl max-h-[95vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white p-4 sm:p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl">
         <div className="flex justify-between items-center mb-4 border-b pb-3">
-          <h2 className="text-xl font-bold text-gray-800">Configuración de Turnos</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Configuración de Turnos</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
@@ -109,7 +109,7 @@ const ConfiguracionTurnos: React.FC<Props> = ({ onClose, onSave }) => {
 
           <div>
             <h3 className="text-lg font-semibold mb-3 text-gray-800">Turnos Configurados</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {turnos.map((turno) => (
                 <div key={turno.letra} className="border border-gray-200 rounded-lg p-3 flex items-center justify-between bg-gray-50">
                   <div className="flex items-center gap-2">
