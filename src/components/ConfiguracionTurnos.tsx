@@ -54,8 +54,8 @@ const ConfiguracionTurnos: React.FC<Props> = ({ onClose, onSave }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
-      <div className="bg-white p-4 sm:p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200] p-4">
+      <div className="bg-white p-4 sm:p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200">
         <div className="flex justify-between items-center mb-4 border-b pb-3">
           <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Configuración de Turnos</h2>
           <button

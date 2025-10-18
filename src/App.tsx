@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { obtenerFestivos, Festivo, eliminarFestivoFijo, restaurarFestivoFijo } from './utils/festivos';
+import ReactDOM from 'react-dom';
+import { obtenerFestivos, Festivo, eliminarFestivoFijo } from './utils/festivos';
 import { agregarFestivo, eliminarFestivo, getFestivosPersonalizados, FestivoPersonalizado } from './utils/festivosPersonalizados';
 import { getConfiguracionTurnos, calcularTurnoParaFecha, guardarConfiguracionTurnos, ConfiguracionTurnos, Turno } from './utils/turnosConfig';
 import { default as ConfiguracionTurnosComponent } from './components/ConfiguracionTurnos';
@@ -95,27 +96,29 @@ function App() {
     event.preventDefault();
     const celdaId = `${meses[mesIndex]}-${dia}`;
     const celdaActual = celdas[celdaId];
-    const letraTurno = celdaActual?.contenido || obtenerTurnoParaFecha(mesIndex, dia) || '';
-    
-    let horasTurno = 0;
-    if (celdaActual && typeof celdaActual.horas === 'number') {
-      // Priorizar las horas guardadas en la celda
-      horasTurno = celdaActual.horas;
-    } else if (configuracionTurnos && letraTurno) {
-      // Si no hay horas en la celda, buscar en la configuración de turnos
-      const turnoConfig = configuracionTurnos.turnos.find(t => t.letra === letraTurno);
-      if (turnoConfig) {
-        horasTurno = turnoConfig.horas;
-      }
+    const turnoCalculado = calcularTurnoParaFecha(new Date(currentYear, mesIndex, dia), configuracionTurnos);
+
+    const contenido = celdaActual?.contenido ?? turnoCalculado?.letra ?? '';
+    const color = celdaActual?.color ?? turnoCalculado?.color ?? '#ffffff';
+    let horas = celdaActual?.horas;
+
+    if (typeof horas !== 'number') {
+      const turnoConfig = configuracionTurnos?.turnos.find(t => t.letra === contenido);
+      horas = turnoConfig?.horas ?? 0;
     }
     
+    const festivo = esFestivo(mesIndex, dia);
+    if (festivo) {
+      // Si es festivo, el color de fondo se gestiona en `obtenerColorCelda`
+    }
+
     setMenuContextual({
       dia,
       mes: mesIndex,
       celdaId,
-      letra: letraTurno,
-      color: celdaActual?.color || obtenerColorTurno(mesIndex, dia) || '#ffffff',
-      horas: horasTurno,
+      letra: contenido,
+      color: color,
+      horas: horas,
       clientX: 0,
       clientY: 0
     });
@@ -175,7 +178,7 @@ function App() {
     
     agregarFestivo({
       dia: menuContextual.dia,
-      mes: menuContextual.mes ?? 0,
+      mes: menuContextual.mes,
       descripcion: modalFestivo.descripcion,
       tipo: modalFestivo.tipo,
       año: modalFestivo.soloEsteAño ? currentYear : undefined
@@ -208,7 +211,7 @@ function App() {
     const año = modalEliminarFestivo.soloEsteAño ? currentYear : undefined;
     
     // Intentar eliminar primero como festivo personalizado
-    eliminarFestivo(menuContextual.dia, menuContextual.mes ?? 0, año);
+    eliminarFestivo(menuContextual.dia, menuContextual.mes, año);
     
     // Si es un festivo fijo, también lo eliminamos
     eliminarFestivoFijo(menuContextual.dia, menuContextual.mes ?? 0, año);
@@ -229,7 +232,7 @@ function App() {
     const festivosPersonalizados = getFestivosPersonalizados();
     const festivoExistente = festivosPersonalizados.find((f: FestivoPersonalizado) => 
       f.dia === menuContextual.dia &&
-      f.mes === (menuContextual.mes ?? 0) &&
+      f.mes === menuContextual.mes &&
       (f.año === currentYear || !f.año) // Considerar festivos de este año o generales
     );
 
@@ -269,13 +272,13 @@ function App() {
 
     // 1. Eliminar el festivo original
     // Necesitamos saber si el original aplicaba solo a un año para eliminarlo correctamente
-    eliminarFestivo(dia, mes ?? 0, añoOriginal); 
+    eliminarFestivo(dia, mes, añoOriginal); 
     // Si también pudiera ser un festivo fijo editable, habría que llamar a eliminarFestivoFijo aquí
 
     // 2. Agregar el festivo modificado
     agregarFestivo({
       dia,
-      mes: mes ?? 0,
+      mes: mes,
       descripcion,
       tipo,
       año: soloEsteAño ? currentYear : undefined
@@ -319,7 +322,7 @@ function App() {
     }
     // Si es fin de semana, prevalece sobre el turno
     if (esFinDeSemana(mes, dia)) {
-      return '#e5e7eb';
+      return '#e5e7eb'; // Un gris muy claro para no competir con otros colores
     }
     // Si está en modo edición y tiene hover
     if (hoveredCell === celdaId) {
@@ -593,7 +596,7 @@ function App() {
   return (
     <div className="container mx-auto p-2 sm:p-4 font-sans">
       {/* Modal para agregar festivo */}
-      {modalFestivo.visible && (
+      {modalFestivo.visible && ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
           <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Agregar festivo</h3>
@@ -634,11 +637,12 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal para eliminar festivo */}
-      {modalEliminarFestivo.visible && (
+      {modalEliminarFestivo.visible && ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
           <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Eliminar festivo</h3>
@@ -669,11 +673,12 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal para EDITAR festivo */}
-      {modalEditarFestivo.visible && (
+      {modalEditarFestivo.visible && ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
           <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Editar festivo</h3>
@@ -729,77 +734,95 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-      <header className="card mb-4 py-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-bold">Calendario de Turnos</h1>
+      <header className="card mb-3 py-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          {/* Título */}
+          <h1 className="text-base sm:text-lg font-bold text-gray-800 text-center sm:text-left">Calendario de Turnos</h1>
           
-          <div className="flex items-center gap-2 md:gap-4">
-            <button 
-              className="btn btn-secondary btn-sm md:btn-md"
-              onClick={() => cambiarAño(-1)}
-            >
-              &lt;
-            </button>
-            <h2 className="text-lg font-semibold">{currentYear}</h2>
-            <button 
-              className="btn btn-secondary btn-sm md:btn-md"
-              onClick={() => cambiarAño(1)}
-            >
-              &gt;
-            </button>
-            
-            <button 
-              className="btn btn-secondary btn-sm md:btn-md ml-2"
-              onClick={() => setMostrarEstadisticas(!mostrarEstadisticas)}
-            >
-              Estadísticas
-            </button>
-            
-            <div className="relative">
+          {/* Controles en línea horizontal */}
+          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+            {/* Navegación de año */}
+            <div className="flex items-center gap-1">
               <button 
-                className="btn btn-primary btn-sm md:btn-md"
-                onClick={() => setMostrarMenuAjustes(!mostrarMenuAjustes)}
+                className="w-7 h-7 text-xs bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center transition-colors duration-150"
+                onClick={() => cambiarAño(-1)}
+                title="Año anterior"
               >
-                Ajustes
+                &lt;
               </button>
-              {mostrarMenuAjustes && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg overflow-hidden z-50">
-                  <div className="py-1">
-                    <button 
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      onClick={() => {
-                        setMostrarConfiguracion(!mostrarConfiguracion);
-                        setMostrarMenuAjustes(false);
-                      }}
-                    >
-                      Configuración
-                    </button>
-                    <button 
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      onClick={() => {
-                        handleExportarDatos();
-                        setMostrarMenuAjustes(false);
-                      }}
-                    >
-                      Exportar
-                    </button>
-                    <label className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 block cursor-pointer">
-                      Importar
-                      <input 
-                        type="file" 
-                        accept="application/json" 
-                        className="hidden" 
-                        onChange={(e) => {
-                          handleImportarDatos(e);
-                          setMostrarMenuAjustes(false);
-                        }} 
-                      />
-                    </label>
-                  </div>
+              <h2 className="text-sm font-semibold text-gray-800 min-w-[40px] text-center">{currentYear}</h2>
+              <button 
+                className="w-7 h-7 text-xs bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center transition-colors duration-150"
+                onClick={() => cambiarAño(1)}
+                title="Año siguiente"
+              >
+                &gt;
+              </button>
+            </div>
+            
+            {/* Botones de acción */}
+            <div className="flex items-center gap-2">
+              <button 
+                className="px-3 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded transition-colors duration-150"
+                onClick={() => setMostrarEstadisticas(!mostrarEstadisticas)}
+              >
+                Estadísticas
+              </button>
+              
+              <div className="relative">
+                <div className="relative">
+                  <button 
+                    className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors duration-150"
+                    onClick={() => setMostrarMenuAjustes(!mostrarMenuAjustes)}
+                  >
+                    Ajustes
+                  </button>
+                  
+                  {mostrarMenuAjustes && ReactDOM.createPortal(
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" onClick={() => setMostrarMenuAjustes(false)}>
+                      <div className="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold mb-4">Ajustes</h3>
+                        <div className="flex flex-col space-y-4">
+                          <button 
+                            className="w-full py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md text-base font-medium"
+                            onClick={() => {
+                              setMostrarConfiguracion(!mostrarConfiguracion);
+                              setMostrarMenuAjustes(false);
+                            }}
+                          >
+                            Configuración
+                          </button>
+                          <button 
+                            className="w-full py-3 bg-green-50 hover:bg-green-100 text-green-700 rounded-md text-base font-medium"
+                            onClick={() => {
+                              handleExportarDatos();
+                              setMostrarMenuAjustes(false);
+                            }}
+                          >
+                            Exportar
+                          </button>
+                          <label className="w-full py-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-md text-base font-medium text-center cursor-pointer">
+                            Importar
+                            <input 
+                              type="file" 
+                              accept="application/json" 
+                              className="hidden" 
+                              onChange={(e) => {
+                                handleImportarDatos(e);
+                                setMostrarMenuAjustes(false);
+                              }} 
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>,
+                    document.body
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>
@@ -856,13 +879,15 @@ function App() {
                     return (
                       <div
                         key={`${mes}-${dia}`}
-                        className={`
-                          flex-1 h-12 border relative flex flex-col items-center justify-center
-                          ${esFinDeSemana(mesIndex, dia) ? 'bg-gray-100' : ''}
-                          ${esFestivoActual ? 'bg-red-100' : ''}
+                        className={
+                          `flex-1 h-12 border relative flex flex-col items-center justify-center
                           ${hoveredCell === celdaId ? 'ring-2 ring-blue-500' : ''}
                           hover:bg-opacity-90 transition-colors duration-150
-                        `}
+                          ${esFinDeSemana(mesIndex, dia) ? 
+                            "bg-[repeating-linear-gradient(-45deg,transparent,transparent_4px,rgba(0,0,0,0.06)_4px,rgba(0,0,0,0.06)_5px)]" 
+                            : ''
+                          }`
+                        }
                         style={{ backgroundColor: color }}
                         onClick={(e) => handleCeldaClick(e, mes, dia, mesIndex)}
                         onMouseEnter={() => setHoveredCell(celdaId)}
@@ -901,7 +926,7 @@ function App() {
         </div>
       </main>
 
-      {menuContextual && (
+      {menuContextual && ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-2xl w-full max-w-sm p-3 flex flex-col max-h-[90vh] animate-fade-in-fast">
             <div className="flex flex-col gap-3 max-h-full overflow-y-auto">
@@ -1028,11 +1053,12 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modales para confirmación de acciones */}
-      {modalImportacion.visible && (
+      {modalImportacion.visible && ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
           <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Confirmar importación</h3>
@@ -1060,7 +1086,8 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       
       {/* Notificación */}
@@ -1072,21 +1099,31 @@ function App() {
         </div>
       )}
 
-      {mostrarConfiguracion && (
+      {mostrarConfiguracion && ReactDOM.createPortal(
         <ConfiguracionTurnosComponent 
           onClose={() => setMostrarConfiguracion(false)}
           onSave={() => {
             setConfiguracionTurnos(getConfiguracionTurnos());
             setMostrarConfiguracion(false);
           }}
+        />,
+        document.body
+      )}
+
+      {/* Overlay para cerrar menú de ajustes al hacer clic fuera */}
+      {mostrarMenuAjustes && (
+        <div 
+          className="fixed inset-0 z-[150]" 
+          onClick={() => setMostrarMenuAjustes(false)}
         />
       )}
 
-      {mostrarEstadisticas && (
+      {mostrarEstadisticas && ReactDOM.createPortal(
         <EstadisticasTurnos 
           año={currentYear}
           onClose={() => setMostrarEstadisticas(false)}
-        />
+        />,
+        document.body
       )}
     </div>
   );

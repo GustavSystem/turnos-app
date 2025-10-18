@@ -49,7 +49,7 @@ const CeldaCalendario: React.FC<CeldaCalendarioProps> = memo(({
       key={`${mes}-${dia}`}
       className={`
         border border-gray-200 h-8 flex items-center justify-center relative cursor-pointer
-        ${esFinDeSemana ? 'bg-gray-50' : ''}
+        ${esFinDeSemana ? 'bg-blue-100' : ''}
         ${esFestivo ? 'bg-red-100' : ''}
       `}
       style={{ backgroundColor: color }}
