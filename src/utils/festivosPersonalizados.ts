@@ -3,7 +3,7 @@ export interface FestivoPersonalizado { // Añadido export
   mes: number;
   descripcion: string;
   tipo: 'nacional' | 'autonomico' | 'local';
-  año: number; // Ahora es obligatorio para separar por año
+  año?: number; // Ahora es obligatorio para separar por año
 }
 
 // Almacenar en localStorage
@@ -32,7 +32,7 @@ export const agregarFestivo = (festivo: FestivoPersonalizado) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(festivos));
 };
 
-export const eliminarFestivo = (dia: number, mes: number, año: number) => {
+export const eliminarFestivo = (dia: number, mes: number, año?: number) => {
   const festivos = getFestivosPersonalizados();
   const festivosFiltrados = festivos.filter(f => 
     !(f.dia === dia && f.mes === mes && f.año === año)
