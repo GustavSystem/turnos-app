@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { obtenerFestivos, Festivo, eliminarFestivoFijo } from './utils/festivos';
+import { obtenerFestivos, eliminarFestivoFijo } from './utils/festivos';
 import { agregarFestivo, eliminarFestivo, getFestivosPersonalizados, FestivoPersonalizado } from './utils/festivosPersonalizados';
-import { getConfiguracionTurnos, calcularTurnoParaFecha, guardarConfiguracionTurnos, ConfiguracionTurnos, Turno } from './utils/turnosConfig';
+import { getConfiguracionTurnos, calcularTurnoParaFecha, ConfiguracionTurnos } from './utils/turnosConfig';
 import { default as ConfiguracionTurnosComponent } from './components/ConfiguracionTurnos';
 import EstadisticasTurnos from './components/EstadisticasTurnos';
-import Calendario from './components/Calendario';
+
 
 interface CeldaData {
   contenido?: string;
@@ -28,7 +28,6 @@ function App() {
   // Estado unificado para el menú contextual
   const [mostrarConfiguracion, setMostrarConfiguracion] = useState(false);
   const [configuracionTurnos, setConfiguracionTurnos] = useState<ConfiguracionTurnos | null>(null);
-  const [celdaEditandoManual, setCeldaEditandoManual] = useState<{id: string, letra: string, color: string} | null>(null);
   const [menuContextual, setMenuContextual] = useState<{
     dia: number,
     mes: number,
@@ -42,8 +41,6 @@ function App() {
   const [mostrarEstadisticas, setMostrarEstadisticas] = useState(false);
   const [mostrarMenuAjustes, setMostrarMenuAjustes] = useState(false);
 
-  // Clave para almacenar las celdas en localStorage, ahora específica por año
-  const CELDAS_STORAGE_KEY = `celdasTurnos_${currentYear}`;
   
   useEffect(() => {
     const config = getConfiguracionTurnos();
@@ -96,7 +93,7 @@ function App() {
     event.preventDefault();
     const celdaId = `${meses[mesIndex]}-${dia}`;
     const celdaActual = celdas[celdaId];
-    const turnoCalculado = calcularTurnoParaFecha(new Date(currentYear, mesIndex, dia), configuracionTurnos);
+    const turnoCalculado = configuracionTurnos ? calcularTurnoParaFecha(new Date(currentYear, mesIndex, dia), configuracionTurnos) : null;
 
     const contenido = celdaActual?.contenido ?? turnoCalculado?.letra ?? '';
     const color = celdaActual?.color ?? turnoCalculado?.color ?? '#ffffff';
@@ -107,11 +104,6 @@ function App() {
       horas = turnoConfig?.horas ?? 0;
     }
     
-    const festivo = esFestivo(mesIndex, dia);
-    if (festivo) {
-      // Si es festivo, el color de fondo se gestiona en `obtenerColorCelda`
-    }
-
     setMenuContextual({
       dia,
       mes: mesIndex,
@@ -128,7 +120,6 @@ function App() {
     if (event.key === 'Enter') {
       const contenido = (event.target as HTMLDivElement).textContent || '';
       const celdaId = `${mes}-${dia}`;
-      const diaSemana = obtenerDiaSemana(mesIndex, dia);
       const festivo = esFestivo(mesIndex, dia);
       
       // Si es un festivo, mantener el color rojo
@@ -211,7 +202,7 @@ function App() {
     const año = modalEliminarFestivo.soloEsteAño ? currentYear : undefined;
     
     // Intentar eliminar primero como festivo personalizado
-    eliminarFestivo(menuContextual.dia, menuContextual.mes, año);
+    eliminarFestivo(menuContextual.dia, menuContextual.mes, año); // FIX: Allow undefined for año
     
     // Si es un festivo fijo, también lo eliminamos
     eliminarFestivoFijo(menuContextual.dia, menuContextual.mes ?? 0, año);
@@ -272,7 +263,7 @@ function App() {
 
     // 1. Eliminar el festivo original
     // Necesitamos saber si el original aplicaba solo a un año para eliminarlo correctamente
-    eliminarFestivo(dia, mes, añoOriginal); 
+    eliminarFestivo(dia, mes, añoOriginal); // FIX: Allow undefined for añoOriginal
     // Si también pudiera ser un festivo fijo editable, habría que llamar a eliminarFestivoFijo aquí
 
     // 2. Agregar el festivo modificado
@@ -297,7 +288,7 @@ function App() {
   const obtenerTurnoParaFecha = (mes: number, dia: number): string | null => {
     if (!configuracionTurnos) return null;
     
-    const fecha = new Date(currentYear, mes, dia);
+    const fecha = new Date(currentYear, mes, dia);    
     const turno = calcularTurnoParaFecha(fecha, configuracionTurnos);
     return turno?.letra || null;
   };
@@ -306,7 +297,7 @@ function App() {
     if (!configuracionTurnos) return null;
     
     const fecha = new Date(currentYear, mes, dia);
-    const turno = calcularTurnoParaFecha(fecha, configuracionTurnos);
+    const turno = calcularTurnoParaFecha(fecha, configuracionTurnos);    
     return turno?.color || null;
   };
 
@@ -358,14 +349,6 @@ function App() {
   // Encontrar el mes con más días para el encabezado
   const maxDias = Math.max(...meses.map((_, index) => getDiasEnMes(index, currentYear)));
 
-  const handleEditarCelda = () => {
-    if (!menuContextual) return;
-    
-    const celdaId = menuContextual.celdaId;
-    setEditandoCelda(celdaId);
-    setMenuContextual(null);
-  };
-
   const handleGuardarEdicionCelda = () => {
     if (!menuContextual) return;
 
@@ -386,16 +369,6 @@ function App() {
     localStorage.setItem(`celdasTurnos_${currentYear}`, JSON.stringify(nuevasCeldas));
     setCeldas(nuevasCeldas);
     setMenuContextual(null);
-  };
-
-  // Función para seleccionar un turno desde el menú contextual
-  const seleccionarTurnoDesdeMenu = (letra: string, color: string) => {
-    if (!menuContextual) return;
-    setMenuContextual(prev => prev ? {
-      ...prev,
-      letra,
-      color
-    } : null);
   };
 
   const handleAsignarTurno = (letra: string, color: string) => {
@@ -581,16 +554,6 @@ function App() {
     
     // Cerrar el modal
     setModalImportacion({ visible: false, datos: null, archivo: null });
-  };
-
-  // Función para actualizar las celdas desde localStorage (para Calendario)
-  const handleActualizarCeldas = () => {
-    const celdasGuardadas = localStorage.getItem(`celdasTurnos_${currentYear}`);
-    if (celdasGuardadas) {
-      setCeldas(JSON.parse(celdasGuardadas));
-    } else {
-      setCeldas({});
-    }
   };
 
   return (
@@ -973,7 +936,7 @@ function App() {
                 <h4 className="font-semibold text-md mb-2">Asignar Turno Predefinido</h4>
                 <div className="flex flex-wrap gap-2">
                   {configuracionTurnos?.turnos.map(turno => (
-                    <button
+                    <button // FIX: Added key prop
                       key={turno.letra}
                       onClick={() => handleAsignarTurno(turno.letra, turno.color)}
                       className={`p-2 rounded-md border flex items-center transition-all duration-150 ${
@@ -1005,7 +968,7 @@ function App() {
                 <h4 className="font-semibold text-md mb-2">Festivos</h4>
                 <div className="flex flex-col space-y-1">
                   {esFestivo(menuContextual.mes, menuContextual.dia) ? (
-                    <>
+                    <React.Fragment key="festivo-actions">
                       <button
                         onClick={handleEditarFestivo}
                         className="w-full text-left p-1.5 rounded-md hover:bg-gray-100"
@@ -1018,9 +981,9 @@ function App() {
                       >
                         Eliminar Festivo
                       </button>
-                    </>
+                    </React.Fragment>
                   ) : (
-                    <>
+                    <React.Fragment key="no-festivo-actions">
                       <button
                         onClick={() => handleAgregarFestivo('local')}
                         className="w-full text-left p-1.5 rounded-md hover:bg-gray-100"
@@ -1039,7 +1002,7 @@ function App() {
                       >
                         Añadir Festivo Nacional
                       </button>
-                    </>
+                    </React.Fragment>
                   )}
                 </div>
               </div>
